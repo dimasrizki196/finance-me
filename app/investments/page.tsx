@@ -165,7 +165,7 @@ export default function InvestmentsPage() {
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {/* POP-UP 1: UPDATE PROFIT */}
           <Dialog>
-            <DialogTrigger asChild>
+            <DialogTrigger>
               <Button
                 variant="outline"
                 className="flex-1 md:flex-none border-purple-200 text-purple-700 hover:bg-purple-50"
@@ -259,7 +259,7 @@ export default function InvestmentsPage() {
 
           {/* POP-UP 2: TARIK DANA */}
           <Dialog>
-            <DialogTrigger asChild>
+            <DialogTrigger>
               <Button
                 variant="outline"
                 className="flex-1 md:flex-none border-emerald-200 text-emerald-700 hover:bg-emerald-50"

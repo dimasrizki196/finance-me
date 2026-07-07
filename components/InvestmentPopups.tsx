@@ -51,7 +51,7 @@ export default function InvestmentPopups({
     <div className="flex flex-wrap items-center gap-2">
       {/* POP-UP 1: KALKULATOR PROFIT */}
       <Dialog>
-        <DialogTrigger asChild>
+        <DialogTrigger>
           <Button
             variant="outline"
             className={cn(
@@ -149,7 +149,7 @@ export default function InvestmentPopups({
 
       {/* POP-UP 2: TARIK DANA */}
       <Dialog>
-        <DialogTrigger asChild>
+        <DialogTrigger>
           <Button
             variant="outline"
             className={cn(

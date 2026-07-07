@@ -63,7 +63,8 @@ export default function AnalyticsChart({ data }: { data: ChartData[] }) {
           />
 
           <Tooltip
-            formatter={(value: number) => [formatRupiah(value), undefined]}
+            // @ts-ignore
+            formatter={(value: number) => formatRupiah(value)}
             contentStyle={{
               borderRadius: "12px",
               border: "none",
