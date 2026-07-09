@@ -3,11 +3,14 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
-import { Wallet, LogOut } from "lucide-react"; // Tambahkan ikon LogOut
+import { Wallet, LogOut } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
+
+// 1. IMPORT PROGRESS BAR
+import NextTopLoader from "nextjs-toploader";
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
@@ -68,6 +71,19 @@ export default async function RootLayout({
       )}
     >
       <body className="min-h-screen bg-background text-foreground flex flex-col">
+        {/* 2. TAMBAHKAN PROGRESS BAR DI SINI */}
+        <NextTopLoader
+          color="#10b981"
+          initialPosition={0.08}
+          crawlSpeed={200}
+          height={3}
+          crawl={true}
+          showSpinner={false}
+          easing="ease"
+          speed={200}
+          shadow="0 0 10px #10b981,0 0 5px #10b981"
+        />
+
         {/* HEADER APLIKASI */}
         <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="container flex h-14 max-w-6xl mx-auto items-center justify-between px-4 sm:px-6">

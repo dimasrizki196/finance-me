@@ -22,7 +22,7 @@ export default async function HomePage() {
     .select("*")
     .or(`owner_id.eq.${user.id},type.eq.joint`);
 
-  // Ditambahkan transaction_date dan name untuk fitur Infaq
+  // Ditambahkan transaction_date dan name untuk fitur Infaq dan Filter
   const { data: transactions } = await supabase
     .from("transactions")
     .select("amount, wallet_id, transaction_date, categories(name, type)");
@@ -40,12 +40,16 @@ export default async function HomePage() {
 
   transactions?.forEach((tx) => {
     // @ts-expect-error: Peringatan relasi
-    const type = tx.categories?.type; // 'income', 'expense', atau 'investment'
+    const catType = tx.categories?.type; // 'income', 'expense', atau 'investment'
+    // @ts-expect-error: Peringatan relasi
+    const catName = tx.categories?.name;
+
     const amount = Number(tx.amount);
     const wallet = wallets?.find((w) => w.id === tx.wallet_id);
 
     if (wallet) {
-      const isRdn =
+      // Cek apakah wallet ini adalah wallet fisik RDN (jika Anda masih punya sisa data lama)
+      const isLegacyRdnWallet =
         wallet.name.toLowerCase().includes("rdn") ||
         wallet.name.toLowerCase().includes("saham");
 
@@ -53,21 +57,27 @@ export default async function HomePage() {
       // LOGIKA UNTUK UANG PRIBADI
       // ------------------------------------
       if (wallet.type === "personal") {
-        personalTransactions.push(tx); // Simpan transaksi untuk halaman Tabs
+        personalTransactions.push(tx); // Simpan transaksi untuk halaman Tabs (Infaq)
 
-        if (type === "income") {
-          totalPersonal += amount;
-          if (isRdn) personalRDN += amount;
-          else personalCash += amount;
-        } else if (type === "expense") {
-          totalPersonal -= amount;
-          if (isRdn) personalRDN -= amount;
-          else personalCash -= amount;
-        } else if (type === "investment") {
-          // Total Uang Pribadi tetap, tapi cash berkurang dan RDN bertambah
-          if (!isRdn) {
-            personalCash -= amount;
-            personalRDN += amount;
+        if (isLegacyRdnWallet) {
+          // Fallback untuk data lama (jika ada dompet khusus bernama RDN)
+          if (catType === "income") personalRDN += amount;
+          else if (catType === "expense" || catType === "investment")
+            personalRDN -= amount;
+        } else {
+          // SISTEM BARU: 1 Dompet Terpusat
+          if (catName === "Pencairan RDN") {
+            personalCash += amount; // Uang masuk ke dompet fisik
+            personalRDN -= amount; // Aset saham berkurang
+          } else if (catName === "Update Portofolio") {
+            personalRDN += amount; // Cash tidak berubah, hanya nilai saham yang naik/turun
+          } else if (catType === "investment") {
+            personalCash -= amount; // Topup saham: uang fisik berkurang
+            personalRDN += amount; // Aset saham bertambah
+          } else if (catType === "income") {
+            personalCash += amount; // Pemasukan biasa
+          } else if (catType === "expense") {
+            personalCash -= amount; // Pengeluaran biasa
           }
         }
       }
@@ -76,24 +86,34 @@ export default async function HomePage() {
       // LOGIKA UNTUK TABUNGAN KITA (BERSAMA)
       // ------------------------------------
       else if (wallet.type === "joint") {
-        if (type === "income") {
-          totalJoint += amount;
-          if (isRdn) jointRDN += amount;
-          else jointCash += amount;
-        } else if (type === "expense") {
-          totalJoint -= amount;
-          if (isRdn) jointRDN -= amount;
-          else jointCash -= amount;
-        } else if (type === "investment") {
-          // Total Tabungan Kita tetap, tapi cash berkurang dan RDN bertambah
-          if (!isRdn) {
+        if (isLegacyRdnWallet) {
+          // Fallback untuk data lama
+          if (catType === "income") jointRDN += amount;
+          else if (catType === "expense" || catType === "investment")
+            jointRDN -= amount;
+        } else {
+          // SISTEM BARU: 1 Dompet Terpusat
+          if (catName === "Pencairan RDN") {
+            jointCash += amount;
+            jointRDN -= amount;
+          } else if (catName === "Update Portofolio") {
+            jointRDN += amount;
+          } else if (catType === "investment") {
             jointCash -= amount;
             jointRDN += amount;
+          } else if (catType === "income") {
+            jointCash += amount;
+          } else if (catType === "expense") {
+            jointCash -= amount;
           }
         }
       }
     }
   });
+
+  // Total Kekayaan = Cash di tangan + Saldo Saham
+  totalPersonal = personalCash + personalRDN;
+  totalJoint = jointCash + jointRDN;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 w-full">

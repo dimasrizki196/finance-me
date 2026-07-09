@@ -19,15 +19,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Tambahkan prop baru untuk Uang Pribadi
 interface DashboardTabsProps {
   totalPersonal: number;
   totalJoint: number;
   jointCash: number;
   jointRDN: number;
-  personalCash: number; // BARU
-  personalRDN: number; // BARU
-  personalTransactions: any[]; // BARU (Untuk hitung pemasukan per bulan)
+  personalCash: number;
+  personalRDN: number;
+  personalTransactions: any[];
 }
 
 export default function DashboardTabs({
@@ -55,7 +54,6 @@ export default function DashboardTabs({
     }).format(angka);
   };
 
-  // --- LOGIKA KALKULATOR INFAQ ---
   const handlePrevMonth = () => {
     setInfaqDate(
       new Date(infaqDate.getFullYear(), infaqDate.getMonth() - 1, 1),
@@ -75,24 +73,27 @@ export default function DashboardTabs({
   const monthStr = String(infaqDate.getMonth() + 1).padStart(2, "0");
   const currentMonthKey = `${yearStr}-${monthStr}`;
 
-  // Filter transaksi PRIBADI yang tipenya 'income' di bulan yang dipilih
+  // ==========================================================
+  // PERBAIKAN LOGIKA INFAQ:
+  // Hindari menghitung "Pencairan RDN" sebagai Pemasukan Infaq
+  // ==========================================================
   const monthlyIncome =
     personalTransactions
       ?.filter((tx) => {
-        const isIncome = tx.categories?.type === "income";
+        const isIncomeType = tx.categories?.type === "income";
         const isCurrentMonth = tx.transaction_date?.startsWith(currentMonthKey);
-        return isIncome && isCurrentMonth;
+        const isNotWD = tx.categories?.name !== "Pencairan RDN"; // PENTING: Mengecualikan Tarik Dana
+
+        return isIncomeType && isCurrentMonth && isNotWD;
       })
       .reduce((acc, tx) => acc + Number(tx.amount), 0) || 0;
 
-  // Rumus 3% dari Pemasukan
   const infaqAmount = monthlyIncome * 0.03;
 
   return (
     <div className="space-y-8 w-full">
       {/* 1. KARTU SEBAGAI TOMBOL TABS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Trigger 1: Kartu Uang Pribadi (Kini ada rincian Cash & RDN) */}
         <div
           onClick={() => setActiveTab("pribadi")}
           className={cn(
@@ -112,7 +113,6 @@ export default function DashboardTabs({
               <p className="text-4xl sm:text-5xl font-bold mt-2">
                 {formatRupiah(totalPersonal)}
               </p>
-              {/* Rincian Cash & RDN Pribadi */}
               <div className="flex flex-wrap items-center gap-4 mt-4 text-xs sm:text-sm font-semibold">
                 <div className="flex items-center gap-1.5 text-zinc-300 bg-zinc-800/80 px-2.5 py-1 rounded-md">
                   <Coins className="w-3.5 h-3.5 text-emerald-400" />
@@ -127,7 +127,6 @@ export default function DashboardTabs({
           </Card>
         </div>
 
-        {/* Trigger 2: Kartu Tabungan Kita */}
         <div
           onClick={() => setActiveTab("bersama")}
           className={cn(
@@ -164,7 +163,6 @@ export default function DashboardTabs({
 
       {/* 2. AREA KONTEN BAWAH */}
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-        {/* --- KONTEN PRIBADI --- */}
         {activeTab === "pribadi" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b pb-2">
@@ -180,7 +178,6 @@ export default function DashboardTabs({
               </Card>
             </Link>
 
-            {/* WIDGET KALKULATOR INFAQ 3% */}
             <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-100 dark:border-emerald-900/50 shadow-sm relative overflow-hidden">
               <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -215,13 +212,12 @@ export default function DashboardTabs({
                     {formatRupiah(infaqAmount)}
                   </p>
                   <p className="text-[10px] sm:text-xs text-emerald-600/80 dark:text-emerald-400/80 font-medium mt-0.5">
-                    Dari Pemasukan: {formatRupiah(monthlyIncome)}
+                    Dari Pemasukan Bersih: {formatRupiah(monthlyIncome)}
                   </p>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Menu Sisa (Menjadi 3 Kolom) */}
             <div className="grid grid-cols-3 gap-3 sm:gap-4">
               <Link
                 href="/analytics?type=personal"
@@ -260,7 +256,6 @@ export default function DashboardTabs({
           </div>
         )}
 
-        {/* --- KONTEN BERSAMA (Tetap sama) --- */}
         {activeTab === "bersama" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between border-b pb-2">
