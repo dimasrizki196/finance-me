@@ -20,6 +20,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { markAsPaid } from "./actions";
+import DebtForm from "@/components/DebtForm"; 
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,11 @@ export default async function DebtsPage() {
               <HandCoins className="w-4 h-4" /> Manajemen Pinjaman Kita
             </p>
           </div>
+        </div>
+
+        {/* MEMANGGIL TOMBOL FORM BARU KITA DI SINI */}
+        <div className="w-full sm:w-auto flex">
+          <DebtForm />
         </div>
       </div>
 
