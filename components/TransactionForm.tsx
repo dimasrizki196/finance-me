@@ -30,6 +30,7 @@ import {
   AlignLeft,
   PlusCircle,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function TransactionForm({
   walletId,
@@ -45,7 +46,7 @@ export default function TransactionForm({
   variant?: "default" | "secondary" | "outline";
 }) {
   const [open, setOpen] = useState(false);
-  const [categoryId, setCategoryId] = useState("");
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(formData: FormData) {
@@ -61,7 +62,7 @@ export default function TransactionForm({
     try {
       await createTransaction(formData);
       setOpen(false);
-      setCategoryId(""); // Reset form setelah sukses
+      setCategoryId("");
     } catch (error) {
       alert("Gagal menyimpan transaksi. Silakan coba lagi.");
     } finally {
@@ -70,49 +71,54 @@ export default function TransactionForm({
   }
 
   const today = new Date().toISOString().split("T")[0];
-
-  // Mengelompokkan kategori untuk dropdown yang lebih rapi
   const incomeCats = categories.filter((c) => c.type === "income");
   const expenseCats = categories.filter((c) => c.type === "expense");
   const investCats = categories.filter((c) => c.type === "investment");
 
+  // SOLUSI BUG: Kita cari nama kategori aslinya untuk dipaksa tampil di UI
+  const selectedCategoryName = categories.find(
+    (c) => c.id === categoryId,
+  )?.name;
+
   return (
     <>
-      {/* 1. Tombol Pemicu di luar Dialog */}
       <Button
         variant={variant}
-        className="w-full shadow-sm"
+        className={cn(
+          "w-full h-11 rounded-xl font-bold shadow-sm transition-all active:scale-95",
+        )}
         onClick={() => setOpen(true)}
       >
-        {triggerText}
+        <PlusCircle className="w-5 h-5 mr-1.5" />
+        {triggerText.replace("+ ", "")}
       </Button>
 
-      {/* 2. Modal Dialog-nya */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[425px] p-6">
-          <DialogHeader className="pb-4 border-b border-zinc-100 dark:border-zinc-800">
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <PlusCircle className="w-5 h-5 text-primary" />
+        <DialogContent className="w-[95vw] sm:max-w-[425px] p-5 sm:p-6 rounded-3xl overflow-hidden">
+          <DialogHeader className="pb-4 border-b border-zinc-100 dark:border-zinc-800 text-left">
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <div className="p-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg">
+                <PlusCircle className="w-5 h-5" />
+              </div>
               Catat Transaksi
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="pt-2">
               Tambah riwayat arus kas untuk dompet <strong>{walletName}</strong>
               .
             </DialogDescription>
           </DialogHeader>
 
-          <form action={handleSubmit} className="space-y-5 mt-4">
-            {/* Input Nominal dengan Prefix Rp */}
-            <div className="space-y-2">
-              <Label htmlFor="amount" className="flex items-center gap-1.5">
-                <Banknote className="w-4 h-4 text-emerald-600" />
-                Nominal
+          <form action={handleSubmit} className="space-y-5 mt-4 w-full">
+            <div className="space-y-2 w-full">
+              <Label
+                htmlFor="amount"
+                className="flex items-center gap-1.5 font-semibold text-zinc-700 dark:text-zinc-300"
+              >
+                <Banknote className="w-4 h-4 text-emerald-600" /> Nominal
               </Label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-zinc-500 font-semibold sm:text-sm">
-                    Rp
-                  </span>
+              <div className="relative w-full">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                  <span className="text-zinc-500 font-bold">Rp</span>
                 </div>
                 <Input
                   id="amount"
@@ -120,23 +126,25 @@ export default function TransactionForm({
                   type="number"
                   required
                   placeholder="0"
-                  className="pl-9 h-12 text-lg font-bold bg-zinc-50 dark:bg-zinc-900 border-zinc-200 focus-visible:ring-emerald-500"
+                  className="w-full pl-11 h-14 text-xl font-black bg-zinc-50 dark:bg-zinc-900/50 border-zinc-200 rounded-xl focus-visible:ring-zinc-500"
                 />
               </div>
             </div>
 
-            {/* Dropdown Kategori Berkelompok */}
-            <div className="space-y-2">
-              <Label htmlFor="category" className="flex items-center gap-1.5">
-                <Tag className="w-4 h-4 text-blue-600" />
-                Kategori
+            <div className="space-y-2 w-full">
+              <Label
+                htmlFor="category"
+                className="flex items-center gap-1.5 font-semibold text-zinc-700 dark:text-zinc-300"
+              >
+                <Tag className="w-4 h-4 text-blue-600" /> Kategori
               </Label>
-              {/* @ts-expect-error: Bug tipe React 19 */}
-              <Select onValueChange={(value) => setCategoryId(value)} required>
-                <SelectTrigger className="h-11">
-                  <SelectValue placeholder="Pilih jenis kategori..." />
+              <Select value={categoryId} onValueChange={setCategoryId} required>
+                <SelectTrigger className="w-full h-12 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl">
+                  <SelectValue placeholder="Pilih jenis kategori...">
+                    {selectedCategoryName || "Pilih jenis kategori..."}
+                  </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
+                <SelectContent className="w-full max-h-[300px]">
                   {incomeCats.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30">
@@ -153,7 +161,6 @@ export default function TransactionForm({
                       ))}
                     </SelectGroup>
                   )}
-
                   {expenseCats.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-rose-600 bg-rose-50 dark:bg-rose-900/30 mt-1">
@@ -170,7 +177,6 @@ export default function TransactionForm({
                       ))}
                     </SelectGroup>
                   )}
-
                   {investCats.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-purple-600 bg-purple-50 dark:bg-purple-900/30 mt-1">
@@ -191,14 +197,13 @@ export default function TransactionForm({
               </Select>
             </div>
 
-            {/* Input Tanggal */}
-            <div className="space-y-2">
+            <div className="space-y-2 w-full">
               <Label
                 htmlFor="transaction_date"
-                className="flex items-center gap-1.5"
+                className="flex items-center gap-1.5 font-semibold text-zinc-700 dark:text-zinc-300"
               >
-                <CalendarDays className="w-4 h-4 text-orange-600" />
-                Tanggal Transaksi
+                <CalendarDays className="w-4 h-4 text-orange-600" /> Tanggal
+                Transaksi
               </Label>
               <Input
                 id="transaction_date"
@@ -206,34 +211,34 @@ export default function TransactionForm({
                 type="date"
                 required
                 defaultValue={today}
-                className="h-11 cursor-pointer"
+                className="w-full h-12 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl cursor-pointer"
               />
             </div>
 
-            {/* Input Catatan Tambahan */}
-            <div className="space-y-2">
-              <Label htmlFor="notes" className="flex items-center gap-1.5">
-                <AlignLeft className="w-4 h-4 text-zinc-500" />
-                Keterangan
+            <div className="space-y-2 w-full">
+              <Label
+                htmlFor="notes"
+                className="flex items-center gap-1.5 font-semibold text-zinc-700 dark:text-zinc-300"
+              >
+                <AlignLeft className="w-4 h-4 text-zinc-500" /> Keterangan
               </Label>
               <Input
                 id="notes"
                 name="notes"
                 placeholder="Misal: Beli makan siang, Topup RDN..."
-                className="h-11"
+                className="w-full h-12 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl"
               />
             </div>
 
-            {/* Tombol Simpan dengan Animasi */}
-            <div className="pt-2">
+            <div className="pt-4 w-full">
               <Button
                 type="submit"
-                className="w-full h-11 text-base font-semibold transition-all"
+                className="w-full h-12 text-base font-bold rounded-xl transition-all"
                 disabled={isSubmitting || !categoryId}
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />{" "}
                     Menyimpan...
                   </>
                 ) : (

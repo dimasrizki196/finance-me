@@ -2,6 +2,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import RoutineSavingsClient from "./RoutineSavingsClient";
+import { AlertCircle, Wallet } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +39,21 @@ export default async function RoutineSavingsPage(props: {
 
   if (!jointWallet) {
     return (
-      <div className="p-8 text-center text-red-500">
-        Error: Dompet Tabungan Kita (joint) belum dibuat. Silakan buat dompet
-        bersama terlebih dahulu.
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full animate-in fade-in duration-500">
+        <Card className="border-rose-200 bg-rose-50/50 dark:bg-rose-950/20 rounded-2xl">
+          <CardContent className="p-6 text-center space-y-3">
+            <div className="p-3 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-full w-fit mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h2 className="font-bold text-base text-rose-800 dark:text-rose-300">
+              Dompet Belum Dibuat
+            </h2>
+            <p className="text-xs sm:text-sm text-rose-700/80 dark:text-rose-400 max-w-md mx-auto">
+              Dompet Tabungan Kita (joint) belum ditemukan di sistem. Silakan
+              buat dompet bersama terlebih dahulu.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -48,16 +62,28 @@ export default async function RoutineSavingsPage(props: {
   const { data: categories } = await supabase
     .from("categories")
     .select("id")
-    .ilike("name", "%Tabungan Kita%") // Mencari nama yang mengandung kata "Tabungan Kita"
+    .ilike("name", "%Tabungan Kita%")
     .limit(1);
 
   const incomeCategoryId = categories?.[0]?.id;
 
   if (!incomeCategoryId) {
     return (
-      <div className="p-8 text-center text-red-500">
-        Error: Kategori 'Tabungan Kita' tidak ditemukan. Silakan buat
-        kategorinya dulu di database.
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto w-full animate-in fade-in duration-500">
+        <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 rounded-2xl">
+          <CardContent className="p-6 text-center space-y-3">
+            <div className="p-3 bg-amber-100 dark:bg-amber-900/30 text-amber-600 rounded-full w-fit mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h2 className="font-bold text-base text-amber-800 dark:text-amber-300">
+              Kategori Belum Dibuat
+            </h2>
+            <p className="text-xs sm:text-sm text-amber-700/80 dark:text-amber-400 max-w-md mx-auto">
+              Kategori 'Tabungan Kita' tidak ditemukan di database. Silakan buat
+              kategorinya terlebih dahulu.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -75,7 +101,7 @@ export default async function RoutineSavingsPage(props: {
     .lte("transaction_date", endDate);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6 w-full animate-in fade-in duration-500">
       <RoutineSavingsClient
         wallet={jointWallet}
         incomeCategoryId={incomeCategoryId}

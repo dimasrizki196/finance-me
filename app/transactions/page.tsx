@@ -23,6 +23,9 @@ import {
   Layers,
   UserCircle2,
   ListOrdered,
+  TrendingUp,
+  TrendingDown,
+  Clock,
 } from "lucide-react";
 import TransactionForm from "@/components/TransactionForm";
 import InvestmentPopups from "@/components/InvestmentPopups";
@@ -66,6 +69,7 @@ export default async function TransactionsPage(props: {
       "eq",
       isPersonal ? user.id : "joint",
     );
+
   const activeWallet = wallets?.[0];
 
   // 3. Waktu
@@ -90,10 +94,21 @@ export default async function TransactionsPage(props: {
   }
 
   const income = transactions
-    .filter((tx) => tx.categories?.type === "income")
+    .filter((tx) => {
+      const cat = Array.isArray(tx.categories)
+        ? tx.categories[0]
+        : tx.categories;
+      return cat?.type === "income";
+    })
     .reduce((sum, tx) => sum + Number(tx.amount), 0);
+
   const expense = transactions
-    .filter((tx) => tx.categories?.type === "expense")
+    .filter((tx) => {
+      const cat = Array.isArray(tx.categories)
+        ? tx.categories[0]
+        : tx.categories;
+      return cat?.type === "expense";
+    })
     .reduce((sum, tx) => sum + Number(tx.amount), 0);
 
   // 5. Ambil Investasi Pribadi (All Time) beserta Logika Profit & WD
@@ -114,33 +129,46 @@ export default async function TransactionsPage(props: {
       const catType = category?.type;
       const catName = category?.name;
       const amount = Number(tx.amount);
-      const note = tx.notes ? tx.notes.trim() : "";
 
-      // Hanya kalkulasi jika itu Investment, Update Portofolio, atau Pencairan
+      // 1. Ubah catatan ke huruf kecil semua untuk mendeteksi kata kunci
+      const noteLower = tx.notes ? tx.notes.trim().toLowerCase() : "";
+      let rdnName = "Investasi Lainnya";
+
+      // 2. Logika pengelompokan ketat (kebal typo/huruf besar-kecil)
+      if (noteLower.includes("putri")) {
+        rdnName = "RDN Putri";
+      } else if (noteLower.includes("dimas")) {
+        rdnName = "RDN Dimas";
+      } else if (
+        noteLower.includes("ajaib") ||
+        noteLower.includes("stockbit")
+      ) {
+        rdnName = "RDN Ajaib";
+      } else if (noteLower.includes("reksa") || noteLower.includes("bibit")) {
+        rdnName = "Reksa Dana";
+      } else if (tx.notes && tx.notes.trim() !== "") {
+        // Jika tidak masuk kategori di atas, rapikan teksnya dan paksa "Rdn" jadi "RDN"
+        rdnName = tx.notes
+          .trim()
+          .split(" ")
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(" ")
+          .replace("Rdn", "RDN");
+      }
+
+      // 3. Kalkulasi ke portofolio
       if (
         catType === "investment" ||
         catName === "Update Portofolio" ||
         catName === "Pencairan RDN"
       ) {
-        const rdnName =
-          note === ""
-            ? "Investasi Lainnya"
-            : note
-                .split(" ")
-                .map(
-                  (w: string) =>
-                    w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
-                )
-                .join(" ");
-
         if (!personalPortfolio[rdnName]) personalPortfolio[rdnName] = 0;
 
-        // Logika Akuntansi
         if (catName === "Pencairan RDN") {
-          personalPortfolio[rdnName] -= amount; // Tarik Dana = Aset Berkurang
+          personalPortfolio[rdnName] -= amount;
           personalInvested -= amount;
         } else {
-          personalPortfolio[rdnName] += amount; // Beli Saham & Update Profit/Loss = Aset Bertambah (bisa minus)
+          personalPortfolio[rdnName] += amount;
           personalInvested += amount;
         }
       }
@@ -157,11 +185,11 @@ export default async function TransactionsPage(props: {
   const getIcon = (name: string) => {
     const lName = name.toLowerCase();
     if (lName.includes("ajaib") || lName.includes("stockbit"))
-      return <Briefcase className="w-4 h-4" />;
+      return <Briefcase className="w-5 h-5" />;
     if (lName.includes("reksa") || lName.includes("bibit"))
-      return <PieChart className="w-4 h-4" />;
-    if (lName.includes("lainnya")) return <Layers className="w-4 h-4" />;
-    return <UserCircle2 className="w-4 h-4" />;
+      return <PieChart className="w-5 h-5" />;
+    if (lName.includes("lainnya")) return <Layers className="w-5 h-5" />;
+    return <UserCircle2 className="w-5 h-5" />;
   };
 
   const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
@@ -174,46 +202,54 @@ export default async function TransactionsPage(props: {
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-6xl mx-auto w-full animate-in fade-in duration-500">
+    <div className="p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto space-y-8 w-full animate-in fade-in duration-500">
       {/* 1. HEADER & FILTER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+        <div className="flex items-center gap-4">
           <Link href="/">
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9 rounded-full shadow-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              className="h-12 w-12 rounded-full shadow-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+            <h1 className="text-3xl font-black tracking-tight text-foreground">
               {isPersonal ? "Uang Pribadi" : "Tabungan Kita"}
             </h1>
-            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5" />
+            <p className="text-sm font-medium text-muted-foreground mt-1 flex items-center gap-1.5">
+              <Wallet className="w-4 h-4" />
               {activeWallet ? activeWallet.name : "Dompet Tidak Ditemukan"}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center justify-between bg-white dark:bg-zinc-950 p-1.5 rounded-lg border shadow-sm w-full md:w-auto min-w-[250px]">
+        <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-900/50 p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm w-full md:w-auto min-w-[280px]">
           <Link
             href={`?type=${walletType}&month=${prevMonth}&year=${prevYear}`}
           >
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ChevronLeft className="w-4 h-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-xl hover:bg-white dark:hover:bg-zinc-800"
+            >
+              <ChevronLeft className="w-5 h-5" />
             </Button>
           </Link>
-          <div className="flex items-center gap-2 font-medium text-sm">
-            <Calendar className="w-4 h-4 text-muted-foreground" /> {monthName}
+          <div className="flex items-center gap-2 font-bold text-sm">
+            <Calendar className="w-4 h-4 text-indigo-500" /> {monthName}
           </div>
           <Link
             href={`?type=${walletType}&month=${nextMonth}&year=${nextYear}`}
           >
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ChevronRight className="w-4 h-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-xl hover:bg-white dark:hover:bg-zinc-800"
+            >
+              <ChevronRight className="w-5 h-5" />
             </Button>
           </Link>
         </div>
@@ -221,37 +257,46 @@ export default async function TransactionsPage(props: {
 
       {/* 2. KARTU TOTAL DASHBOARD (DI ATAS) */}
       <div
-        className={`grid grid-cols-1 sm:grid-cols-2 ${isPersonal ? "lg:grid-cols-3" : ""} gap-4`}
+        className={`grid grid-cols-1 sm:grid-cols-2 ${isPersonal ? "lg:grid-cols-3" : ""} gap-5`}
       >
-        <Card className="bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-zinc-950 border-emerald-100 dark:border-emerald-900/50 shadow-sm">
-          <CardContent className="p-5 flex flex-col justify-center h-full">
-            <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-2 mb-1">
-              <ArrowDownRight className="w-4 h-4" /> Masuk Bulan Ini
+        <Card className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white border-none shadow-xl shadow-emerald-500/20 rounded-3xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mr-6 -mt-6 opacity-20">
+            <ArrowDownRight className="w-32 h-32" />
+          </div>
+          <CardContent className="p-6 sm:p-8 relative z-10">
+            <p className="text-emerald-100 font-bold text-xs mb-2 uppercase tracking-widest">
+              Masuk Bulan Ini
             </p>
-            <p className="text-2xl sm:text-3xl font-bold text-emerald-700 dark:text-emerald-500">
+            <p className="text-3xl sm:text-4xl font-black tracking-tighter">
               {formatRupiah(income)}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-rose-50 to-white dark:from-rose-950/30 dark:to-zinc-950 border-rose-100 dark:border-rose-900/50 shadow-sm">
-          <CardContent className="p-5 flex flex-col justify-center h-full">
-            <p className="text-sm font-medium text-rose-600 dark:text-rose-400 flex items-center gap-2 mb-1">
-              <ArrowUpRight className="w-4 h-4" /> Keluar Bulan Ini
+        <Card className="bg-gradient-to-br from-rose-500 to-rose-700 text-white border-none shadow-xl shadow-rose-500/20 rounded-3xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mr-6 -mt-6 opacity-20">
+            <ArrowUpRight className="w-32 h-32" />
+          </div>
+          <CardContent className="p-6 sm:p-8 relative z-10">
+            <p className="text-rose-100 font-bold text-xs mb-2 uppercase tracking-widest">
+              Keluar Bulan Ini
             </p>
-            <p className="text-2xl sm:text-3xl font-bold text-rose-700 dark:text-rose-500">
+            <p className="text-3xl sm:text-4xl font-black tracking-tighter">
               {formatRupiah(expense)}
             </p>
           </CardContent>
         </Card>
 
         {isPersonal && (
-          <Card className="bg-gradient-to-br from-teal-900 to-emerald-900 text-teal-50 border-none shadow-sm">
-            <CardContent className="p-5 flex flex-col justify-center h-full">
-              <p className="text-sm font-medium text-teal-200/80 flex items-center gap-2 mb-1">
-                <Briefcase className="w-4 h-4" /> Total Aset Investasi
+          <Card className="bg-gradient-to-br from-indigo-800 to-indigo-950 text-indigo-50 border-none shadow-xl shadow-indigo-900/20 rounded-3xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mr-6 -mt-6 opacity-10">
+              <Briefcase className="w-32 h-32" />
+            </div>
+            <CardContent className="p-6 sm:p-8 relative z-10">
+              <p className="text-indigo-300 font-bold text-xs mb-2 uppercase tracking-widest">
+                Aset Investasi
               </p>
-              <p className="text-2xl sm:text-3xl font-bold tracking-tight">
+              <p className="text-3xl sm:text-4xl font-black tracking-tighter">
                 {formatRupiah(personalInvested)}
               </p>
             </CardContent>
@@ -259,8 +304,8 @@ export default async function TransactionsPage(props: {
         )}
       </div>
 
-      {/* 3. PANEL AKSI CEPAT (Tengah) */}
-      <div className="flex flex-col sm:flex-row items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm">
+      {/* 3. PANEL AKSI CEPAT */}
+      <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-sm">
         <div className="w-full sm:w-auto">
           {activeWallet && (
             <TransactionForm
@@ -276,7 +321,6 @@ export default async function TransactionsPage(props: {
           Object.keys(personalPortfolio).length > 0 &&
           activeWallet && (
             <div className="w-full sm:w-auto flex-1 flex">
-              {/* INI KUNCI UTAMA: Kita mengirimkan activeWallet.id ke Popups */}
               <InvestmentPopups
                 portfolio={personalPortfolio}
                 type="personal"
@@ -288,11 +332,11 @@ export default async function TransactionsPage(props: {
 
       {/* 4. RINCIAN PORTOFOLIO (Hanya jika Personal) */}
       {isPersonal && Object.keys(personalPortfolio).length > 0 && (
-        <div className="pt-2">
-          <h2 className="text-base font-semibold flex items-center gap-2 mb-3 text-muted-foreground">
-            <Layers className="w-4 h-4" /> Sebaran Portofolio Saham
+        <div className="pt-4">
+          <h2 className="text-xl font-bold flex items-center gap-2 mb-4 text-foreground">
+            <Layers className="w-6 h-6 text-indigo-500" /> Sebaran Portofolio
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {Object.entries(personalPortfolio)
               .sort(([, a], [, b]) => b - a)
               .map(([rdnName, amount]) => {
@@ -303,20 +347,23 @@ export default async function TransactionsPage(props: {
                 return (
                   <Card
                     key={rdnName}
-                    className="hover:shadow-md transition-all duration-300 border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-950/50"
+                    className="hover:border-indigo-500/50 transition-colors border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-sm"
                   >
-                    <CardContent className="p-4 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-bold flex items-center gap-2">
-                          {getIcon(rdnName)} {rdnName}
-                        </p>
-                        <p className="text-lg font-black text-foreground mt-1">
-                          {formatRupiah(amount)}
+                    <CardContent className="p-5">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl">
+                          {getIcon(rdnName)}
+                        </div>
+                        <p className="text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg">
+                          {percentage}%
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs font-medium text-teal-600 bg-teal-50 dark:bg-teal-900/30 px-2 py-1 rounded-full">
-                          {percentage}%
+                      <div>
+                        <p className="text-sm font-bold text-muted-foreground mb-1">
+                          {rdnName}
+                        </p>
+                        <p className="text-2xl font-black text-foreground">
+                          {formatRupiah(amount)}
                         </p>
                       </div>
                     </CardContent>
@@ -328,10 +375,10 @@ export default async function TransactionsPage(props: {
       )}
 
       {/* 5. RIWAYAT TRANSAKSI (Paling Bawah) */}
-      <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm mt-6">
-        <CardHeader className="pb-3 border-b border-zinc-100 dark:border-zinc-800/50 bg-white dark:bg-zinc-950 rounded-t-xl">
-          <CardTitle className="text-base flex items-center gap-2">
-            <ListOrdered className="w-4 h-4 text-muted-foreground" /> Riwayat
+      <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm rounded-3xl mt-8 overflow-hidden">
+        <CardHeader className="pb-5 border-b border-zinc-100 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-900/30">
+          <CardTitle className="text-xl flex items-center gap-2">
+            <ListOrdered className="w-5 h-5 text-indigo-500" /> Riwayat
             Transaksi
           </CardTitle>
           <CardDescription>
@@ -343,42 +390,68 @@ export default async function TransactionsPage(props: {
           {transactions.length > 0 ? (
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
               {transactions.map((tx) => {
-                const isIncome = tx.categories?.type === "income";
+                const category: any = Array.isArray(tx.categories)
+                  ? tx.categories[0]
+                  : tx.categories;
+                const catType = category?.type;
+                const catName = category?.name;
+                const amountNum = Number(tx.amount);
+
+                // FIX BUG VIEW: Penentuan warna & icon berdasarkan logika mutasi kas riil
+                let isPositive = catType === "income";
+                let Icon = isPositive ? ArrowDownRight : ArrowUpRight;
+                let bgStyle = isPositive
+                  ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600"
+                  : "bg-rose-100 dark:bg-rose-900/30 text-rose-600";
+
+                // Khusus "Update Portofolio", bisa untung (+) atau rugi (-)
+                if (catName === "Update Portofolio") {
+                  isPositive = amountNum >= 0;
+                  Icon = isPositive ? TrendingUp : TrendingDown;
+                  bgStyle = isPositive
+                    ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600"
+                    : "bg-rose-100 dark:bg-rose-900/30 text-rose-600";
+                }
+
+                // Kita absolut-kan angkanya agar tidak ada "-Rp -50.000"
+                const displayAmount = Math.abs(amountNum);
 
                 return (
                   <div
                     key={tx.id}
-                    className="p-4 sm:p-5 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors"
+                    className="p-5 sm:p-6 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-900/40 transition-colors"
                   >
-                    <div className="flex items-center gap-3 sm:gap-4 overflow-hidden">
-                      <div
-                        className={`p-2.5 rounded-full shrink-0 ${isIncome ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" : "bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400"}`}
-                      >
-                        {isIncome ? (
-                          <ArrowDownRight className="w-5 h-5" />
-                        ) : (
-                          <ArrowUpRight className="w-5 h-5" />
-                        )}
+                    <div className="flex items-center gap-4 overflow-hidden">
+                      <div className={`p-3 rounded-2xl shrink-0 ${bgStyle}`}>
+                        <Icon className="w-5 h-5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-sm sm:text-base truncate">
-                          {tx.categories?.name}
+                        <p className="font-bold text-base sm:text-lg truncate text-foreground">
+                          {catName}
                         </p>
-                        <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                        <p className="text-xs sm:text-sm font-medium text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
+                          <Clock className="w-3.5 h-3.5" />
                           {new Date(tx.transaction_date).toLocaleDateString(
                             "id-ID",
                             { day: "numeric", month: "short", year: "numeric" },
                           )}
-                          {tx.notes && ` • ${tx.notes}`}
+                          {tx.notes && (
+                            <span className="text-zinc-300 dark:text-zinc-600 hidden sm:inline">
+                              •
+                            </span>
+                          )}
+                          {tx.notes && (
+                            <span className="truncate">{tx.notes}</span>
+                          )}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right shrink-0 pl-2">
+                    <div className="text-right shrink-0 pl-4">
                       <p
-                        className={`font-bold text-base sm:text-lg tracking-tight ${isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}
+                        className={`font-black text-lg sm:text-xl tracking-tight ${isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-500"}`}
                       >
-                        {isIncome ? "+" : "-"}
-                        {formatRupiah(Number(tx.amount))}
+                        {isPositive ? "+" : "-"}
+                        {formatRupiah(displayAmount)}
                       </p>
                     </div>
                   </div>
@@ -386,12 +459,12 @@ export default async function TransactionsPage(props: {
               })}
             </div>
           ) : (
-            <div className="p-10 text-center text-muted-foreground flex flex-col items-center justify-center">
-              <div className="p-4 bg-zinc-100 dark:bg-zinc-900 rounded-full mb-4">
-                <Wallet className="w-8 h-8 opacity-40" />
+            <div className="p-12 text-center text-muted-foreground flex flex-col items-center justify-center">
+              <div className="p-5 bg-zinc-100 dark:bg-zinc-900 rounded-full mb-4 text-zinc-400">
+                <Wallet className="w-10 h-10" />
               </div>
-              <p className="font-semibold text-lg text-foreground">Kosong</p>
-              <p className="text-sm opacity-80 mt-1 max-w-xs">
+              <p className="font-bold text-xl text-foreground">Kosong</p>
+              <p className="text-sm font-medium mt-1 max-w-xs">
                 Belum ada transaksi di bulan {monthName}.
               </p>
             </div>
