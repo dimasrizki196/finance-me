@@ -18,6 +18,7 @@ import {
   PiggyBank,
   Briefcase,
   Plus,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -246,7 +247,7 @@ export default function DashboardTabs({
             </Card>
 
             {/* GRID MENU BAWAH */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Link
                 href="/analytics?type=personal"
                 className="block group h-full"
@@ -282,6 +283,18 @@ export default function DashboardTabs({
                     </div>
                     <p className="font-bold text-[10px] sm:text-[11px] uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
                       Split Bill
+                    </p>
+                  </CardContent>
+                </Card>
+              </Link>
+              <Link href="/produksi" className="block group h-full">
+                <Card className="h-full transition-all hover:border-rose-500/50 dark:hover:bg-zinc-900/50 shadow-sm rounded-2xl border-zinc-200 dark:border-zinc-800">
+                  <CardContent className="p-3.5 sm:p-4 flex flex-col items-center justify-center text-center space-y-2 h-full">
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-900/30 text-rose-600 rounded-xl group-hover:scale-110 transition-transform">
+                      <Zap className="w-4 h-4" />
+                    </div>
+                    <p className="font-bold text-[10px] sm:text-[11px] uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
+                      Usaha Produksi
                     </p>
                   </CardContent>
                 </Card>
