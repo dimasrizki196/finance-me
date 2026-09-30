@@ -54,6 +54,7 @@ export default function ProduksiPage() {
   const [showForm, setShowForm] = useState(false);
   const [newPeriod, setNewPeriod] = useState({
     name: "",
+    modalAwal: "",
     startDate: "",
     endDate: "",
   });
@@ -145,9 +146,13 @@ export default function ProduksiPage() {
       // 2. Laba Bersih
       const labaBersih = totalOmzet - totalPengeluaranModal;
 
+      const modalAwal = Number(res?.period?.modal_awal || 0);
+
       // 3. Uang Cash Akhir
       const uangCashAkhir =
-        labaBersih - pengeluaranPribadi - pengeluaranOperasional;
+        modalAwal + labaBersih - pengeluaranPribadi - pengeluaranOperasional;
+
+      // .
 
       // Terapkan default 25, 50, 25 jika belum ada setting di database
       const initialSettings = res?.period?.settings || {
@@ -159,6 +164,7 @@ export default function ProduksiPage() {
       setAllocations(initialSettings);
 
       setSummaryData({
+        modalAwal,
         totalOmzet,
         totalPengeluaranModal,
         labaBersih,
@@ -179,12 +185,15 @@ export default function ProduksiPage() {
 
     setIsSubmitting(true);
     try {
+      // Tambahkan Number(newPeriod.modalAwal) ke dalam pemanggilan fungsi
       await createPeriod(
         newPeriod.name,
         newPeriod.startDate,
         newPeriod.endDate,
+        Number(newPeriod.modalAwal) || 0,
       );
-      setNewPeriod({ name: "", startDate: "", endDate: "" });
+      // Kosongkan form kembali
+      setNewPeriod({ name: "", startDate: "", endDate: "", modalAwal: "" });
       setShowForm(false);
       await loadData();
     } catch (error) {
@@ -335,6 +344,20 @@ export default function ProduksiPage() {
                     value={newPeriod.name}
                     onChange={(e) =>
                       setNewPeriod({ ...newPeriod, name: e.target.value })
+                    }
+                    disabled={isSubmitting}
+                    className="h-10 sm:h-11 rounded-xl bg-white text-sm"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label className="text-xs sm:text-sm">Modal Awal (Rp)</Label>
+                  <Input
+                    type="number"
+                    placeholder="Contoh: 5000000 (tanpa titik)"
+                    value={newPeriod.modalAwal}
+                    onChange={(e) =>
+                      setNewPeriod({ ...newPeriod, modalAwal: e.target.value })
                     }
                     disabled={isSubmitting}
                     className="h-10 sm:h-11 rounded-xl bg-white text-sm"
@@ -561,6 +584,53 @@ export default function ProduksiPage() {
               ) : summaryData ? (
                 <div className="space-y-4">
                   {/* KARTU 1: ALUR KAS & LABA */}
+                  <Card className="p-4 border-zinc-200 shadow-sm rounded-2xl bg-white space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                        Status Modal Awal
+                      </span>
+                      {summaryData.uangCashAkhir >= summaryData.modalAwal ? (
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black flex items-center gap-1">
+                          ✓ Sudah Balik Modal
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-black flex items-center gap-1">
+                          ⏳ Belum Balik Modal
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-100">
+                      <div>
+                        <p className="text-[11px] text-zinc-500 font-medium">
+                          Modal Awal
+                        </p>
+                        <p className="text-sm font-bold text-zinc-800">
+                          {formatRupiah(summaryData.modalAwal)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-zinc-500 font-medium">
+                          {summaryData.uangCashAkhir >= summaryData.modalAwal
+                            ? "Surplus / Keuntungan"
+                            : "Kurang Modal (Target)"}
+                        </p>
+                        <p
+                          className={`text-sm font-bold ${
+                            summaryData.uangCashAkhir >= summaryData.modalAwal
+                              ? "text-emerald-600"
+                              : "text-amber-600"
+                          }`}
+                        >
+                          {formatRupiah(
+                            Math.abs(
+                              summaryData.uangCashAkhir - summaryData.modalAwal,
+                            ),
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
                   <Card className="p-4 sm:p-5 border-zinc-200 shadow-sm rounded-2xl space-y-3 sm:space-y-4">
                     {/* 1. Omzet */}
                     <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">

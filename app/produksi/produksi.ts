@@ -25,7 +25,7 @@ export async function getAllPeriods() {
 }
 
 // 2. Buka Periode Baru (dengan Start Date & End Date)
-export async function createPeriod(name: string, startDate: string, endDate: string) {
+export async function createPeriod(name: string, startDate: string, endDate: string, modalAwal: number) {
   const supabase = createClient();
   const { data: { user } } = await (await supabase).auth.getUser();
   if (!user) throw new Error("Unauthorized");
@@ -36,6 +36,7 @@ export async function createPeriod(name: string, startDate: string, endDate: str
       {
         user_id: user.id,
         name,
+        modal_awal: modalAwal,
         start_date: startDate,
         end_date: endDate, // Tanggal akhir ditambahkan
         status: "active",

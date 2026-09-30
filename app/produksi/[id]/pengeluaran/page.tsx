@@ -123,6 +123,13 @@ export default function PengeluaranPage({
     .filter((t) => t.type === "kebutuhan")
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
+  // --- TAMBAHKAN KALKULASI INI ---
+  const totalPengeluaran = totalBelanjaStok + totalOperasional + totalKebutuhan;
+
+  // Asumsi: period.omzet adalah total uang masuk/modal yang ada
+  const totalPemasukan = period?.omzet || 0;
+  const sisaKas = totalPemasukan - totalPengeluaran;
+
   // Filter Transaksi untuk Riwayat
   const filteredTransactions = transactions.filter((t) => {
     if (filterType === "all") return true;
@@ -165,6 +172,24 @@ export default function PengeluaranPage({
           </div>
         </div>
       </div>
+
+      <Card className="p-6 bg-emerald-600 rounded-3xl text-white shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <p className="text-emerald-100 font-medium text-sm">
+            Total Sisa Saldo / Kas Tersedia
+          </p>
+          <h2 className="text-3xl sm:text-4xl font-black mt-1">
+            {formatRupiah(sisaKas)}
+          </h2>
+          <p className="text-emerald-200 text-xs mt-2">
+            Dari Total Pemasukan:{" "}
+            <span className="font-bold">{formatRupiah(totalPemasukan)}</span>
+          </p>
+        </div>
+        <div className="p-3 bg-white/20 rounded-2xl">
+          <Wallet className="w-8 h-8 text-white" />
+        </div>
+      </Card>
 
       {/* SUMMARY KARTU (3 TIPE) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
