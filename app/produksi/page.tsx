@@ -10,8 +10,8 @@ import {
   Package,
   PieChart,
   Wallet,
-  ArrowDownCircle,
   ArrowUpCircle,
+  TrendingUp,
   History,
   BookOpen,
   Warehouse,
@@ -19,6 +19,7 @@ import {
   Save,
   Loader2,
   Lock,
+  Coins,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -101,60 +102,48 @@ export default function ProduksiPage() {
     setIsLoadingSummary(true);
     setIsEditingAlloc(false);
     try {
-      // 1. Ambil detail buku harian
       const res = await getPeriodDetail(period.id);
-      // 2. Ambil semua kas keluar
       const trxs = await getPeriodTransactions(period.id);
 
-      let totalModalStok = 0;
+      let totalModalStokHPP = 0; // HPP (Hanya untuk hitung Laba Bersih)
+      let totalModalCash = 0;
       let totalOmzet = 0;
-      let totalPengeluaranEkstra = 0;
 
-      // Hitung Omzet dan Pengeluaran Harian dari Buku Harian
+      // Data dari Buku Harian
       if (res && res.records) {
         res.records.forEach((rec: any) => {
-          totalModalStok += Number(rec.modal_pagi || 0);
+          totalModalStokHPP += Number(rec.modal_stok || 0);
+          totalModalCash += Number(rec.modal_cash || 0);
           totalOmzet += Number(rec.omset_malam || 0);
-
-          if (rec.detail_harian && Array.isArray(rec.detail_harian)) {
-            rec.detail_harian.forEach((item: any) => {
-              totalPengeluaranEkstra += Number(item.price || 0);
-            });
-          }
         });
       }
 
       let pengeluaranPribadi = 0;
       let pengeluaranOperasional = 0;
+      let totalBelanjaStok = 0; // INI YANG AKAN KITA PAKAI UNTUK SISA MODAL
 
-      // Hitung Kebutuhan Pribadi & Operasional dari Kas Keluar (prod_transactions)
+      // Data dari Transaksi / Kas Keluar
       if (trxs && Array.isArray(trxs)) {
         trxs.forEach((t: any) => {
           const type = (t.type || "").toLowerCase();
-          // Klasifikasi berdasarkan tipe transaksi
           if (type.includes("pribadi") || type.includes("kebutuhan")) {
             pengeluaranPribadi += Number(t.amount || 0);
           } else if (type.includes("operasional")) {
             pengeluaranOperasional += Number(t.amount || 0);
+          } else if (type.includes("belanja_stok")) {
+            totalBelanjaStok += Number(t.amount || 0);
           }
         });
       }
 
-      // 1. Total Pengeluaran Modal (Stok HPP + Belanja Ekstra Harian)
-      const totalPengeluaranModal = totalModalStok + totalPengeluaranEkstra;
+      // --- LOGIKA LABA RUGI P&L (Untuk dapat Nilai Laba Bersih) ---
+      const totalPengeluaranHPP = totalModalStokHPP + totalModalCash;
+      const labaBersih = totalOmzet - totalPengeluaranHPP;
 
-      // 2. Laba Bersih
-      const labaBersih = totalOmzet - totalPengeluaranModal;
+      // Modal Masuk Harian (Omzet dikurangi Laba Bersih)
+      const modalMasukHarian = totalOmzet - labaBersih;
 
       const modalAwal = Number(res?.period?.modal_awal || 0);
-
-      // 3. Uang Cash Akhir
-      const uangCashAkhir =
-        modalAwal + labaBersih - pengeluaranPribadi - pengeluaranOperasional;
-
-      // .
-
-      // Terapkan default 25, 50, 25 jika belum ada setting di database
       const initialSettings = res?.period?.settings || {
         pct_modal: 25,
         pct_kebutuhan: 50,
@@ -165,12 +154,13 @@ export default function ProduksiPage() {
 
       setSummaryData({
         modalAwal,
+        totalBelanjaStok, // Transaksi Fisik Gudang
+        totalModalCash, // Belanja Harian
         totalOmzet,
-        totalPengeluaranModal,
+        modalMasukHarian,
         labaBersih,
         pengeluaranPribadi,
         pengeluaranOperasional,
-        uangCashAkhir,
       });
     } catch (error) {
       console.error("Gagal memuat ringkasan", error);
@@ -185,14 +175,12 @@ export default function ProduksiPage() {
 
     setIsSubmitting(true);
     try {
-      // Tambahkan Number(newPeriod.modalAwal) ke dalam pemanggilan fungsi
       await createPeriod(
         newPeriod.name,
         newPeriod.startDate,
         newPeriod.endDate,
         Number(newPeriod.modalAwal) || 0,
       );
-      // Kosongkan form kembali
       setNewPeriod({ name: "", startDate: "", endDate: "", modalAwal: "" });
       setShowForm(false);
       await loadData();
@@ -241,7 +229,7 @@ export default function ProduksiPage() {
     if (!selectedPeriod) return;
 
     const confirmClose = window.confirm(
-      `⚠️ PERINGATAN TUTUP BUKU\n\nApakah Anda yakin ingin menutup periode "${selectedPeriod.name}"?\n\nSetelah ditutup:\n• Periode ini akan berstatus "Closed".\n• Akan berpindah ke Riwayat Periode.`,
+      `⚠️ PERINGATAN TUTUP BUKU\n\nApakah Anda yakin ingin menutup periode "${selectedPeriod.name}"?`,
     );
 
     if (!confirmClose) return;
@@ -249,23 +237,15 @@ export default function ProduksiPage() {
     setIsClosing(true);
     try {
       await closePeriod(selectedPeriod.id);
-
-      // Reload seluruh data dari Supabase
       const updatedPeriods = await getAllPeriods();
-      // Atau jika kamu memakai fungsi loadData() lokal:
-      // await loadData();
+      setPeriods(updatedPeriods);
 
-      // Cari periode aktif lain yang tersisa (jika ada) untuk dijadikan selectedPeriod
       const remainingActive = updatedPeriods.find(
         (p: any) => p.status === "active",
       );
-      if (remainingActive) {
-        setSelectedPeriod(remainingActive);
-      } else if (updatedPeriods.length > 0) {
-        setSelectedPeriod(updatedPeriods[0]);
-      } else {
-        setSelectedPeriod(null);
-      }
+      if (remainingActive) setSelectedPeriod(remainingActive);
+      else if (updatedPeriods.length > 0) setSelectedPeriod(updatedPeriods[0]);
+      else setSelectedPeriod(null);
 
       alert(`Periode "${selectedPeriod.name}" berhasil ditutup.`);
     } catch (error) {
@@ -281,8 +261,9 @@ export default function ProduksiPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="animate-pulse text-zinc-500 font-medium text-sm">
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+        <p className="text-zinc-500 font-medium text-sm">
           Memuat data usaha...
         </p>
       </div>
@@ -298,9 +279,9 @@ export default function ProduksiPage() {
             <Button
               variant="outline"
               size="icon"
-              className="h-10 w-10 sm:h-12 sm:w-12 rounded-full shadow-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200"
+              className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl shadow-sm hover:bg-zinc-100 border-zinc-200"
             >
-              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-600 dark:text-zinc-300" />
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-600" />
             </Button>
           </Link>
           <div>
@@ -308,14 +289,15 @@ export default function ProduksiPage() {
               Manajemen Usaha
             </h1>
             <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-0.5 flex items-center gap-1.5">
-              <Store className="w-3.5 h-3.5" /> Kelola Siklus, Stok, dan Laba
+              <Store className="w-3.5 h-3.5 text-orange-500" /> Kelola Siklus,
+              Stok, dan Laba
             </p>
           </div>
         </div>
         <div className="w-full sm:w-auto">
           <Button
             onClick={() => setShowForm(!showForm)}
-            className="w-full sm:w-auto bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-bold h-10 sm:h-11 px-5 active:scale-95 text-sm"
+            className="w-full sm:w-auto bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-bold h-10 sm:h-11 px-5 active:scale-95 text-sm transition-all"
           >
             <PlusCircle className="w-4 h-4 mr-2" /> Buka Periode
           </Button>
@@ -324,19 +306,16 @@ export default function ProduksiPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
         {/* KIRI: DAFTAR PERIODE */}
-        <div className="lg:col-span-7 space-y-6">
+        <div className="lg:col-span-5 space-y-6">
           {showForm && (
-            <Card className="p-5 sm:p-6 border-orange-200 bg-orange-50/50 shadow-sm rounded-2xl animate-in slide-in-from-top-4">
-              <h2 className="text-lg sm:text-xl font-bold mb-4 flex items-center gap-2">
+            <Card className="p-5 border-orange-200 bg-orange-50/50 shadow-md rounded-2xl animate-in slide-in-from-top-4">
+              <h2 className="text-base font-bold mb-4 flex items-center gap-2">
                 <Package className="w-5 h-5 text-orange-500" /> Mulai Siklus
                 Baru
               </h2>
-              <form
-                onSubmit={handleCreatePeriod}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4"
-              >
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label className="text-xs sm:text-sm">
+              <form onSubmit={handleCreatePeriod} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">
                     Nama Periode / Batch
                   </Label>
                   <Input
@@ -346,65 +325,76 @@ export default function ProduksiPage() {
                       setNewPeriod({ ...newPeriod, name: e.target.value })
                     }
                     disabled={isSubmitting}
-                    className="h-10 sm:h-11 rounded-xl bg-white text-sm"
+                    className="h-10 rounded-xl bg-white text-sm"
                     required
                   />
                 </div>
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label className="text-xs sm:text-sm">Modal Awal (Rp)</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">
+                    Modal Awal (Rp)
+                  </Label>
                   <Input
                     type="number"
-                    placeholder="Contoh: 5000000 (tanpa titik)"
+                    placeholder="Contoh: 5000000"
                     value={newPeriod.modalAwal}
                     onChange={(e) =>
                       setNewPeriod({ ...newPeriod, modalAwal: e.target.value })
                     }
                     disabled={isSubmitting}
-                    className="h-10 sm:h-11 rounded-xl bg-white text-sm"
+                    className="h-10 rounded-xl bg-white text-sm"
                     required
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs sm:text-sm">Tanggal Mulai</Label>
-                  <Input
-                    type="date"
-                    value={newPeriod.startDate}
-                    onChange={(e) =>
-                      setNewPeriod({ ...newPeriod, startDate: e.target.value })
-                    }
-                    disabled={isSubmitting}
-                    className="h-10 sm:h-11 rounded-xl bg-white text-sm"
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">
+                      Tanggal Mulai
+                    </Label>
+                    <Input
+                      type="date"
+                      value={newPeriod.startDate}
+                      onChange={(e) =>
+                        setNewPeriod({
+                          ...newPeriod,
+                          startDate: e.target.value,
+                        })
+                      }
+                      disabled={isSubmitting}
+                      className="h-10 rounded-xl bg-white text-xs"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">
+                      Tanggal Akhir
+                    </Label>
+                    <Input
+                      type="date"
+                      value={newPeriod.endDate}
+                      onChange={(e) =>
+                        setNewPeriod({ ...newPeriod, endDate: e.target.value })
+                      }
+                      disabled={isSubmitting}
+                      className="h-10 rounded-xl bg-white text-xs"
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs sm:text-sm">Tanggal Akhir</Label>
-                  <Input
-                    type="date"
-                    value={newPeriod.endDate}
-                    onChange={(e) =>
-                      setNewPeriod({ ...newPeriod, endDate: e.target.value })
-                    }
-                    disabled={isSubmitting}
-                    className="h-10 sm:h-11 rounded-xl bg-white text-sm"
-                    required
-                  />
-                </div>
-                <div className="md:col-span-2 flex justify-end gap-2 mt-2 pt-4 border-t border-orange-200/50">
+                <div className="flex justify-end gap-2 mt-2 pt-3 border-t border-orange-200">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setShowForm(false)}
-                    className="h-9 sm:h-10 rounded-xl text-xs sm:text-sm"
+                    className="h-9 rounded-xl text-xs"
                   >
                     Batal
                   </Button>
                   <Button
                     type="submit"
-                    className="h-9 sm:h-10 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold px-6 shadow-md text-xs sm:text-sm"
+                    className="h-9 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold px-5 text-xs"
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? "Menyimpan..." : "Simpan Periode"}
+                    {isSubmitting ? "Menyimpan..." : "Simpan Siklus"}
                   </Button>
                 </div>
               </form>
@@ -412,7 +402,7 @@ export default function ProduksiPage() {
           )}
 
           <div className="space-y-3">
-            <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
+            <h2 className="text-sm font-bold flex items-center gap-2">
               <PlayCircle className="w-4 h-4 text-orange-500" /> Siklus Berjalan
               (Aktif)
             </h2>
@@ -422,50 +412,46 @@ export default function ProduksiPage() {
                   <Card
                     key={period.id}
                     onClick={() => handleSelectPeriod(period)}
-                    className={`cursor-pointer transition-all hover:shadow-md p-4 rounded-xl border-2 ${
+                    className={`cursor-pointer transition-all p-4 rounded-2xl border-2 ${
                       selectedPeriod?.id === period.id
-                        ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
+                        ? "border-orange-500 bg-orange-50"
                         : "border-zinc-200 hover:border-orange-300"
                     }`}
                   >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px] font-black uppercase mb-1.5 inline-block">
-                          Aktif
-                        </span>
-                        <p className="font-bold text-base sm:text-lg text-zinc-900">
-                          {period.name}
-                        </p>
-                        <p className="text-[11px] sm:text-xs text-zinc-500 mt-1 font-medium">
-                          <Calendar className="inline w-3 h-3 mr-1" />
-                          {formatDate(period.start_date)} s/d{" "}
-                          {formatDate(period.end_date)}
-                        </p>
-                      </div>
+                    <div>
+                      <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px] font-black uppercase mb-1.5 inline-block">
+                        Aktif
+                      </span>
+                      <p className="font-bold text-base text-zinc-900">
+                        {period.name}
+                      </p>
+                      <p className="text-[11px] text-zinc-500 mt-1 font-medium flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {formatDate(period.start_date)} s/d{" "}
+                        {formatDate(period.end_date)}
+                      </p>
                     </div>
                   </Card>
                 ))}
               </div>
             ) : (
               <div className="p-5 bg-zinc-50 border border-dashed rounded-xl text-center">
-                <p className="text-xs sm:text-sm text-zinc-500">
-                  Belum Ada Siklus Aktif
-                </p>
+                <p className="text-xs text-zinc-500">Belum Ada Siklus Aktif</p>
               </div>
             )}
           </div>
 
           {closedPeriods.length > 0 && (
-            <div className="space-y-3 pt-2">
-              <h2 className="text-base sm:text-lg font-bold flex items-center gap-2">
-                <History className="w-4 h-4 text-zinc-500" /> Riwayat Tutup Buku
+            <div className="space-y-3 pt-4 border-t border-zinc-100">
+              <h2 className="text-sm font-bold flex items-center gap-2 text-zinc-600">
+                <History className="w-4 h-4 text-zinc-400" /> Riwayat Tutup Buku
               </h2>
               <div className="grid grid-cols-1 gap-3">
                 {closedPeriods.map((period) => (
                   <Card
                     key={period.id}
                     onClick={() => handleSelectPeriod(period)}
-                    className={`cursor-pointer transition-all hover:shadow-md p-3 sm:p-4 rounded-xl border-2 ${
+                    className={`cursor-pointer transition-all p-3.5 rounded-2xl border-2 ${
                       selectedPeriod?.id === period.id
                         ? "border-zinc-800 bg-zinc-100"
                         : "border-zinc-200"
@@ -473,15 +459,15 @@ export default function ProduksiPage() {
                   >
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="font-bold text-sm sm:text-base text-zinc-700">
+                        <p className="font-bold text-sm text-zinc-700">
                           {period.name}
                         </p>
-                        <p className="text-[11px] sm:text-xs text-zinc-500 mt-0.5">
+                        <p className="text-[11px] text-zinc-500 mt-0.5">
                           {formatDate(period.start_date)} s/d{" "}
                           {formatDate(period.end_date)}
                         </p>
                       </div>
-                      <span className="text-[10px] bg-zinc-200 text-zinc-500 px-2 py-1 rounded uppercase font-bold">
+                      <span className="text-[10px] bg-zinc-200 text-zinc-500 px-2 py-1 rounded-md uppercase font-bold">
                         Tutup
                       </span>
                     </div>
@@ -492,19 +478,42 @@ export default function ProduksiPage() {
           )}
         </div>
 
-        {/* KANAN: DASHBOARD */}
-        <div className="lg:col-span-5 space-y-5 lg:pl-6 lg:border-l border-zinc-200 h-full">
+        {/* KANAN: DASHBOARD MANAJEMEN */}
+        <div className="lg:col-span-7 space-y-5 lg:pl-6 lg:border-l border-zinc-200">
           {selectedPeriod ? (
-            <div className="sticky top-6 space-y-5">
-              <div>
-                <h2 className="text-lg sm:text-xl font-black text-foreground">
-                  {selectedPeriod.name}
-                </h2>
-                <p className="text-xs sm:text-sm text-zinc-500">
-                  Dashboard Ringkasan
-                </p>
+            <div className="space-y-5">
+              <div className="flex items-center justify-between bg-zinc-900 text-white p-4 rounded-2xl shadow-sm">
+                <div>
+                  <span className="text-[10px] text-orange-400 font-bold uppercase tracking-widest">
+                    Periode Terpilih
+                  </span>
+                  <h2 className="text-lg sm:text-xl font-black">
+                    {selectedPeriod.name}
+                  </h2>
+                </div>
+                {selectedPeriod.status === "active" ? (
+                  <Button
+                    onClick={handleClosePeriod}
+                    disabled={isClosing}
+                    variant="destructive"
+                    size="sm"
+                    className="bg-rose-600 hover:bg-rose-700 rounded-xl text-xs text-white h-9 px-3"
+                  >
+                    {isClosing ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 mr-1" />
+                    )}{" "}
+                    Tutup Buku
+                  </Button>
+                ) : (
+                  <span className="text-xs bg-zinc-800 text-zinc-400 px-3 py-1 rounded-xl font-bold flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> Periode Ditutup
+                  </span>
+                )}
               </div>
 
+              {/* NAVIGASI MENU */}
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <Link
                   href={`/produksi/${selectedPeriod.id}`}
@@ -523,7 +532,7 @@ export default function ProduksiPage() {
                 >
                   <Button
                     variant="outline"
-                    className="w-full border-amber-500 text-amber-700 hover:bg-amber-50 rounded-xl flex flex-col h-auto py-2.5 px-1 gap-1"
+                    className="w-full border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-xl flex flex-col h-auto py-2.5 px-1 gap-1"
                   >
                     <Warehouse className="w-4 h-4 sm:w-5 sm:h-5" />
                     <span className="text-[10px] sm:text-xs font-medium">
@@ -537,7 +546,7 @@ export default function ProduksiPage() {
                 >
                   <Button
                     variant="outline"
-                    className="w-full border-emerald-500 text-emerald-700 hover:bg-emerald-50 rounded-xl flex flex-col h-auto py-2.5 px-1 gap-1"
+                    className="w-full border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-xl flex flex-col h-auto py-2.5 px-1 gap-1"
                   >
                     <Wallet className="w-4 h-4 sm:w-5 sm:h-5" />
                     <span className="text-[10px] sm:text-xs font-medium">
@@ -547,210 +556,315 @@ export default function ProduksiPage() {
                 </Link>
               </div>
 
-              {/* KONTROL STATUS PERIODE (TUTUP BUKU / BADGE CLOSED) */}
-              {selectedPeriod.status === "active" ? (
-                <Button
-                  onClick={handleClosePeriod}
-                  disabled={isClosing}
-                  variant="destructive"
-                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold h-11 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-[0.98]"
-                >
-                  {isClosing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Memproses Tutup Buku...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-4 h-4" />
-                      <span>Tutup Buku / Periode Ini</span>
-                    </>
-                  )}
-                </Button>
-              ) : (
-                /* Tampilan Opsional jika periode yang sedang dipilih sudah Closed */
-                <div className="w-full py-2.5 px-4 bg-zinc-100 border border-zinc-200 rounded-xl flex items-center justify-center gap-2 text-zinc-500 text-xs sm:text-sm font-medium">
-                  <Lock className="w-4 h-4 text-zinc-400" />
-                  <span>Periode Ini Telah Ditutup (Selesai)</span>
-                </div>
-              )}
-
               {isLoadingSummary ? (
-                <div className="p-6 text-center bg-zinc-50 rounded-2xl animate-pulse">
-                  <p className="text-xs sm:text-sm text-zinc-500 font-medium">
-                    Menghitung kalkulasi...
+                <div className="p-8 text-center bg-zinc-50 border border-zinc-100 rounded-2xl animate-pulse">
+                  <p className="text-xs text-zinc-500 font-medium">
+                    Menghitung kalkulasi keuangan...
                   </p>
                 </div>
               ) : summaryData ? (
-                <div className="space-y-4">
-                  {/* KARTU 1: ALUR KAS & LABA */}
-                  <Card className="p-4 border-zinc-200 shadow-sm rounded-2xl bg-white space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
-                        Status Modal Awal
-                      </span>
-                      {summaryData.uangCashAkhir >= summaryData.modalAwal ? (
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black flex items-center gap-1">
-                          ✓ Sudah Balik Modal
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-black flex items-center gap-1">
-                          ⏳ Belum Balik Modal
-                        </span>
-                      )}
-                    </div>
+                (() => {
+                  const modalAwal = summaryData.modalAwal || 0;
+                  const totalBelanjaStok = summaryData.totalBelanjaStok || 0; // Transaksi Asli (Rp 686.610)
+                  const modalHarian = summaryData.totalModalCash || 0;
+                  const pengeluaranOperasional =
+                    summaryData.pengeluaranOperasional || 0;
+                  const modalMasukHarian = summaryData.modalMasukHarian || 0;
 
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-100">
-                      <div>
-                        <p className="text-[11px] text-zinc-500 font-medium">
-                          Modal Awal
+                  const omzet = summaryData.totalOmzet || 0;
+                  const labaBersih = summaryData.labaBersih || 0;
+                  const pengeluaranPribadi =
+                    summaryData.pengeluaranPribadi || 0;
+
+                  // 1. Sisa Modal Dasar (Murni Terintegrasi dengan Kas Keluar)
+                  const sisaModalDasar =
+                    modalAwal -
+                    totalBelanjaStok -
+                    modalHarian -
+                    pengeluaranOperasional +
+                    modalMasukHarian;
+
+                  // 2. Alokasi Jatah Laba
+                  const jatahModalSimpan =
+                    labaBersih * (allocations.pct_modal / 100);
+                  const jatahKebutuhanPribadi =
+                    labaBersih * (allocations.pct_kebutuhan / 100);
+                  const jatahTabungan =
+                    labaBersih * (allocations.pct_tabungan / 100);
+
+                  // 3. Realtime Pemakaian Modal Simpan
+                  // Jika sisaModalDasar kurang dari Modal Awal, kita "pakai" Jatah Modal Simpan untuk menambalnya.
+                  const kebutuhanReplenish = Math.max(
+                    0,
+                    modalAwal - sisaModalDasar,
+                  );
+                  const terpakaiModalSimpan = Math.min(
+                    jatahModalSimpan,
+                    kebutuhanReplenish,
+                  );
+                  const sisaModalSimpan =
+                    jatahModalSimpan - terpakaiModalSimpan;
+
+                  // 4. Sisa Modal Akhir
+                  const sisaModalAkhir = sisaModalDasar + terpakaiModalSimpan;
+
+                  // 5. Hitungan Sisa Kebutuhan Pribadi
+                  const sisaKebutuhanPribadi =
+                    jatahKebutuhanPribadi - pengeluaranPribadi;
+
+                  // 6. Total Cash Fisik
+                  // Rumus: Sisa Modal Akhir + Sisa Uang Pribadi + Sisa Uang Modal Simpan (jika ada) + Uang Tabungan
+                  const sisaAlokasiLabaLainnya =
+                    sisaKebutuhanPribadi + sisaModalSimpan + jatahTabungan;
+                  const totalCashDipegang =
+                    sisaModalAkhir + sisaAlokasiLabaLainnya;
+
+                  return (
+                    <div className="space-y-4">
+                      {/* 1. TOTAL CASH DI PEGANG */}
+                      <Card className="p-5 border-emerald-300 bg-emerald-600 shadow-md rounded-2xl text-white">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest mb-1">
+                              Total Uang Cash Fisik
+                            </p>
+                            <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
+                              {formatRupiah(totalCashDipegang)}
+                            </h2>
+                          </div>
+                          <div className="p-3 bg-emerald-500/50 rounded-xl">
+                            <Coins className="w-8 h-8 text-white" />
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-emerald-100 mt-4 pt-2 border-t border-emerald-500/60 font-medium">
+                          Modal Akhir ({formatRupiah(sisaModalAkhir)}) + Sisa
+                          Alokasi Laba ({formatRupiah(sisaAlokasiLabaLainnya)})
                         </p>
-                        <p className="text-sm font-bold text-zinc-800">
-                          {formatRupiah(summaryData.modalAwal)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-zinc-500 font-medium">
-                          {summaryData.uangCashAkhir >= summaryData.modalAwal
-                            ? "Surplus / Keuntungan"
-                            : "Kurang Modal (Target)"}
-                        </p>
-                        <p
-                          className={`text-sm font-bold ${
-                            summaryData.uangCashAkhir >= summaryData.modalAwal
-                              ? "text-emerald-600"
-                              : "text-amber-600"
-                          }`}
-                        >
-                          {formatRupiah(
-                            Math.abs(
-                              summaryData.uangCashAkhir - summaryData.modalAwal,
-                            ),
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  </Card>
-                  <Card className="p-4 sm:p-5 border-zinc-200 shadow-sm rounded-2xl space-y-3 sm:space-y-4">
-                    {/* 1. Omzet */}
-                    <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
-                      <span className="text-xs sm:text-sm font-semibold text-zinc-500 flex items-center gap-1.5">
-                        <ArrowUpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />{" "}
-                        Omzet Periode
-                      </span>
-                      <span className="text-sm sm:text-base font-black text-emerald-600">
-                        {formatRupiah(summaryData.totalOmzet)}
-                      </span>
-                    </div>
+                      </Card>
 
-                    {/* 2. Pengeluaran Modal (Stok & Ekstra) */}
-                    <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
-                      <span className="text-xs sm:text-sm font-semibold text-zinc-500 flex items-center gap-1.5">
-                        <ArrowDownCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />{" "}
-                        Pengeluaran Modal
-                      </span>
-                      <span className="text-sm sm:text-base font-black text-red-600">
-                        -{formatRupiah(summaryData.totalPengeluaranModal)}
-                      </span>
-                    </div>
+                      {/* 2. ALUR MODAL PUTAR (TERINTEGRASI) */}
+                      <Card className="p-4 sm:p-5 border-zinc-200 shadow-xs rounded-2xl bg-white space-y-3">
+                        <div className="flex items-center justify-between border-b border-zinc-100 pb-2.5">
+                          <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <Store className="w-4 h-4 text-orange-500" />{" "}
+                            Sirkulasi Sisa Modal
+                          </span>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-800">
+                            Terintegrasi
+                          </span>
+                        </div>
 
-                    {/* 3. Laba Bersih */}
-                    <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5 pt-1">
-                      <span className="text-sm sm:text-base font-bold text-zinc-700">
-                        Laba Bersih
-                      </span>
-                      <span className="text-lg sm:text-xl font-black text-blue-600">
-                        {formatRupiah(summaryData.labaBersih)}
-                      </span>
-                    </div>
+                        <div className="space-y-2.5 text-xs sm:text-sm">
+                          <div className="flex justify-between items-center text-zinc-600">
+                            <span>Modal Awal Input</span>
+                            <span className="font-bold text-zinc-800">
+                              {formatRupiah(modalAwal)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-zinc-600">
+                            <span>- Belanja Stok (Gudang)</span>
+                            <span className="font-bold text-rose-600">
+                              -{formatRupiah(totalBelanjaStok)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-zinc-600">
+                            <span>- Modal Cash Harian</span>
+                            <span className="font-bold text-rose-600">
+                              -{formatRupiah(modalHarian)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-zinc-600">
+                            <span>- Operasional Usaha</span>
+                            <span className="font-bold text-rose-600">
+                              -{formatRupiah(pengeluaranOperasional)}
+                            </span>
+                          </div>
 
-                    {/* 4. Pengeluaran Pribadi */}
-                    <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
-                      <span className="text-xs sm:text-sm font-semibold text-zinc-500 flex items-center gap-1.5 ml-2">
-                        <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-orange-500" />{" "}
-                        Kebutuhan Pribadi
-                      </span>
-                      <span className="text-sm sm:text-base font-black text-orange-600">
-                        -{formatRupiah(summaryData.pengeluaranPribadi)}
-                      </span>
-                    </div>
+                          {/* SISA MODAL AWAL (Sama persis dengan halaman Kas Keluar) */}
+                          <div className="flex justify-between items-center bg-zinc-50 p-2 rounded-lg border border-zinc-100 my-1.5">
+                            <span className="text-[11px] font-bold text-zinc-700 uppercase">
+                              Sisa Modal Awal
+                            </span>
+                            <span className="text-sm font-black text-zinc-900">
+                              {formatRupiah(sisaModalDasar - modalMasukHarian)}
+                            </span>
+                          </div>
 
-                    {/* 5. Pengeluaran Operasional */}
-                    <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
-                      <span className="text-xs sm:text-sm font-semibold text-zinc-500 flex items-center gap-1.5 ml-2">
-                        <Store className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-orange-500" />{" "}
-                        Operasional Usaha
-                      </span>
-                      <span className="text-sm sm:text-base font-black text-orange-600">
-                        -{formatRupiah(summaryData.pengeluaranOperasional)}
-                      </span>
-                    </div>
+                          <div className="flex justify-between items-center text-zinc-600">
+                            <span>+ Modal Masuk Harian (Dari Omzet)</span>
+                            <span className="font-bold text-emerald-600">
+                              +{formatRupiah(modalMasukHarian)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-zinc-600">
+                            <span>+ Alokasi Modal Simpan (Terpakai)</span>
+                            <span className="font-bold text-blue-600">
+                              +{formatRupiah(terpakaiModalSimpan)}
+                            </span>
+                          </div>
+                        </div>
 
-                    {/* 6. Total Cash */}
-                    <div className="pt-2">
-                      <div className="flex justify-between items-center bg-emerald-50 p-3 sm:p-4 rounded-xl border border-emerald-100">
-                        <span className="text-sm sm:text-base font-bold text-emerald-800">
-                          Total Cash Dipegang
+                        <div className="border-t border-dashed border-zinc-200 pt-3 mt-2">
+                          <div className="flex justify-between items-center bg-zinc-100 p-3 rounded-xl border border-zinc-200">
+                            <span className="text-xs font-black text-zinc-800">
+                              Sisa Modal Akhir
+                            </span>
+                            <span className="text-base font-black text-zinc-900">
+                              {formatRupiah(sisaModalAkhir)}
+                            </span>
+                          </div>
+                        </div>
+                      </Card>
+
+                      {/* 3. KINERJA PENJUALAN & LABA */}
+                      <Card className="p-4 sm:p-5 border-zinc-200 shadow-xs rounded-2xl bg-white space-y-3">
+                        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block border-b border-zinc-100 pb-2">
+                          Kinerja Penjualan & Laba
                         </span>
-                        <span className="text-lg sm:text-2xl font-black text-emerald-700">
-                          {formatRupiah(summaryData.uangCashAkhir)}
-                        </span>
-                      </div>
-                    </div>
-                  </Card>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
+                            <span className="text-[10px] text-emerald-700 font-bold uppercase flex items-center gap-1">
+                              <ArrowUpCircle className="w-3.5 h-3.5" /> Omzet
+                              Periode
+                            </span>
+                            <p className="text-base sm:text-lg font-black text-emerald-700 mt-0.5">
+                              {formatRupiah(omzet)}
+                            </p>
+                          </div>
+                          <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
+                            <span className="text-[10px] text-blue-700 font-bold uppercase flex items-center gap-1">
+                              <TrendingUp className="w-3.5 h-3.5" /> Laba Bersih
+                            </span>
+                            <p className="text-base sm:text-lg font-black text-blue-700 mt-0.5">
+                              {formatRupiah(labaBersih)}
+                            </p>
+                          </div>
+                        </div>
+                      </Card>
 
-                  {/* KARTU 2: ALOKASI LABA */}
-                  <Card className="p-4 sm:p-5 border-zinc-200 shadow-sm rounded-2xl bg-blue-50/50 transition-all">
-                    <div className="flex items-center justify-between mb-3 sm:mb-4">
-                      <h3 className="text-xs sm:text-sm font-bold text-zinc-700 flex items-center gap-1.5">
-                        <PieChart className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" />{" "}
-                        Alokasi Laba Bersih
-                      </h3>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={isSavingAlloc}
-                        className="h-7 sm:h-8 px-2 text-xs text-zinc-500 hover:text-blue-600"
-                        onClick={() => {
-                          if (isEditingAlloc) {
-                            handleSaveAllocations();
-                          } else {
-                            setIsEditingAlloc(true);
-                          }
-                        }}
-                      >
-                        {isSavingAlloc ? (
-                          <span className="animate-pulse">Menyimpan...</span>
-                        ) : isEditingAlloc ? (
-                          <>
-                            <Save className="w-3.5 h-3.5 mr-1" /> Simpan
-                          </>
-                        ) : (
-                          <>
-                            <Edit2 className="w-3.5 h-3.5 mr-1" /> Ubah Persen
-                          </>
+                      {/* 4. ALOKASI DANA LABA BERSIH (REALTIME) */}
+                      <Card className="p-4 sm:p-5 border-blue-200 bg-blue-50/30 shadow-xs rounded-2xl space-y-4">
+                        <div className="flex items-center justify-between border-b border-blue-100 pb-2.5">
+                          <h3 className="text-xs sm:text-sm font-bold text-blue-950 flex items-center gap-1.5">
+                            <PieChart className="w-4 h-4 text-blue-600" />{" "}
+                            Pembagian Alokasi Laba
+                          </h3>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={isSavingAlloc}
+                            className="h-7 px-2.5 text-xs text-blue-700 font-bold hover:bg-blue-100 rounded-lg"
+                            onClick={() => {
+                              if (isEditingAlloc) handleSaveAllocations();
+                              else setIsEditingAlloc(true);
+                            }}
+                          >
+                            {isSavingAlloc ? (
+                              "Memproses..."
+                            ) : isEditingAlloc ? (
+                              <>
+                                <Save className="w-3.5 h-3.5 mr-1" /> Simpan
+                              </>
+                            ) : (
+                              <>
+                                <Edit2 className="w-3.5 h-3.5 mr-1" /> Ubah %
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
+                        {allocError && (
+                          <div className="text-xs font-bold text-rose-600 bg-rose-50 p-2 rounded-lg border border-rose-200">
+                            {allocError}
+                          </div>
                         )}
-                      </Button>
-                    </div>
 
-                    {allocError && (
-                      <div className="mb-3 text-[10px] sm:text-xs font-medium text-red-600 bg-red-50 p-2 rounded-lg border border-red-100">
-                        {allocError}
-                      </div>
-                    )}
+                        <div className="space-y-3 text-xs sm:text-sm">
+                          {/* Modal Simpan (Realtime Tracker) */}
+                          <div className="bg-white p-3 rounded-xl border border-blue-100 shadow-2xs space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-zinc-800">
+                                Modal Simpan (Gudang)
+                              </span>
+                              <span
+                                className={`font-black ${sisaModalSimpan === 0 ? "text-zinc-400" : "text-emerald-600"}`}
+                              >
+                                Sisa: {formatRupiah(sisaModalSimpan)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] text-zinc-500 pt-1 border-t border-zinc-100">
+                              <span>
+                                Jatah ({allocations.pct_modal}%):{" "}
+                                <b>{formatRupiah(jatahModalSimpan)}</b>
+                              </span>
+                              <span>
+                                Terpakai:{" "}
+                                <b className="text-blue-500">
+                                  -{formatRupiah(terpakaiModalSimpan)}
+                                </b>
+                              </span>
+                            </div>
+                            {terpakaiModalSimpan > 0 && (
+                              <p className="text-[9px] text-blue-600 font-medium italic">
+                                *Uang terpakai langsung di-suntik ke Sisa Modal
+                                Akhir.
+                              </p>
+                            )}
+                          </div>
 
-                    <div className="space-y-3 sm:space-y-4">
-                      {/* Modal Stok */}
-                      <div className="flex justify-between items-center text-xs sm:text-sm">
-                        <div>
-                          <p className="font-bold text-zinc-800">
-                            Kembali ke Gudang
-                          </p>
-                          {isEditingAlloc ? (
-                            <div className="flex items-center mt-0.5">
+                          {/* Kebutuhan Pribadi (Realtime Tracker) */}
+                          <div className="bg-white p-3 rounded-xl border border-blue-100 shadow-2xs space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-zinc-800">
+                                Kebutuhan Pribadi
+                              </span>
+                              <span
+                                className={`font-black ${sisaKebutuhanPribadi < 0 ? "text-rose-600" : "text-emerald-600"}`}
+                              >
+                                Sisa: {formatRupiah(sisaKebutuhanPribadi)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] text-zinc-500 pt-1 border-t border-zinc-100">
+                              <span>
+                                Jatah ({allocations.pct_kebutuhan}%):{" "}
+                                <b>{formatRupiah(jatahKebutuhanPribadi)}</b>
+                              </span>
+                              <span>
+                                Terpakai:{" "}
+                                <b className="text-rose-600">
+                                  -{formatRupiah(pengeluaranPribadi)}
+                                </b>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Tabungan */}
+                          <div className="bg-white p-3 rounded-xl border border-blue-100 shadow-2xs">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="font-bold text-zinc-800">
+                                Tabungan Finansial
+                              </span>
+                              <span className="font-black text-indigo-600">
+                                {formatRupiah(jatahTabungan)}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-zinc-500">
+                              Jatah {allocations.pct_tabungan}% dari Laba
+                              Bersih.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* FORM EDIT PERSENTASE */}
+                        {isEditingAlloc && (
+                          <div className="pt-3 border-t border-blue-200/80 grid grid-cols-3 gap-2">
+                            <div>
+                              <Label className="text-[10px] font-bold text-zinc-600">
+                                Modal %
+                              </Label>
                               <Input
                                 type="number"
-                                className="h-6 w-14 sm:w-16 text-[10px] sm:text-xs px-1.5 py-0"
+                                className="h-8 text-xs bg-white rounded-lg mt-0.5"
                                 value={allocations.pct_modal}
                                 onChange={(e) =>
                                   setAllocations({
@@ -759,35 +873,14 @@ export default function ProduksiPage() {
                                   })
                                 }
                               />
-                              <span className="ml-1 text-[10px] sm:text-xs text-zinc-500">
-                                %
-                              </span>
                             </div>
-                          ) : (
-                            <p className="text-[9px] sm:text-[10px] text-zinc-500">
-                              {allocations.pct_modal}% dari Laba
-                            </p>
-                          )}
-                        </div>
-                        <span className="font-black">
-                          {formatRupiah(
-                            summaryData.labaBersih *
-                              (allocations.pct_modal / 100),
-                          )}
-                        </span>
-                      </div>
-
-                      {/* Kebutuhan */}
-                      <div className="flex justify-between items-center text-xs sm:text-sm">
-                        <div>
-                          <p className="font-bold text-zinc-800">
-                            Kebutuhan Pribadi
-                          </p>
-                          {isEditingAlloc ? (
-                            <div className="flex items-center mt-0.5">
+                            <div>
+                              <Label className="text-[10px] font-bold text-zinc-600">
+                                Pribadi %
+                              </Label>
                               <Input
                                 type="number"
-                                className="h-6 w-14 sm:w-16 text-[10px] sm:text-xs px-1.5 py-0"
+                                className="h-8 text-xs bg-white rounded-lg mt-0.5"
                                 value={allocations.pct_kebutuhan}
                                 onChange={(e) =>
                                   setAllocations({
@@ -796,35 +889,14 @@ export default function ProduksiPage() {
                                   })
                                 }
                               />
-                              <span className="ml-1 text-[10px] sm:text-xs text-zinc-500">
-                                %
-                              </span>
                             </div>
-                          ) : (
-                            <p className="text-[9px] sm:text-[10px] text-zinc-500">
-                              {allocations.pct_kebutuhan}% dari Laba
-                            </p>
-                          )}
-                        </div>
-                        <span className="font-black">
-                          {formatRupiah(
-                            summaryData.labaBersih *
-                              (allocations.pct_kebutuhan / 100),
-                          )}
-                        </span>
-                      </div>
-
-                      {/* Tabungan */}
-                      <div className="flex justify-between items-center text-xs sm:text-sm">
-                        <div>
-                          <p className="font-bold text-zinc-800">
-                            Tabungan Finansial
-                          </p>
-                          {isEditingAlloc ? (
-                            <div className="flex items-center mt-0.5">
+                            <div>
+                              <Label className="text-[10px] font-bold text-zinc-600">
+                                Tabungan %
+                              </Label>
                               <Input
                                 type="number"
-                                className="h-6 w-14 sm:w-16 text-[10px] sm:text-xs px-1.5 py-0"
+                                className="h-8 text-xs bg-white rounded-lg mt-0.5"
                                 value={allocations.pct_tabungan}
                                 onChange={(e) =>
                                   setAllocations({
@@ -833,34 +905,21 @@ export default function ProduksiPage() {
                                   })
                                 }
                               />
-                              <span className="ml-1 text-[10px] sm:text-xs text-zinc-500">
-                                %
-                              </span>
                             </div>
-                          ) : (
-                            <p className="text-[9px] sm:text-[10px] text-zinc-500">
-                              {allocations.pct_tabungan}% dari Laba
-                            </p>
-                          )}
-                        </div>
-                        <span className="font-black">
-                          {formatRupiah(
-                            summaryData.labaBersih *
-                              (allocations.pct_tabungan / 100),
-                          )}
-                        </span>
-                      </div>
+                          </div>
+                        )}
+                      </Card>
                     </div>
-                  </Card>
-                </div>
+                  );
+                })()
               ) : null}
             </div>
           ) : (
-            <div className="p-6 bg-zinc-50 border border-dashed rounded-2xl text-center mt-10">
-              <PieChart className="w-6 h-6 sm:w-8 sm:h-8 text-zinc-300 mx-auto mb-2 sm:mb-3" />
-              <p className="text-xs sm:text-sm font-medium text-muted-foreground">
-                Pilih salah satu periode di sebelah kiri
-                <br className="hidden sm:block" /> untuk melihat dashboard.
+            <div className="p-8 bg-zinc-50 border border-dashed border-zinc-200 rounded-2xl text-center my-8">
+              <PieChart className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+              <p className="text-xs sm:text-sm font-medium text-zinc-500">
+                Pilih salah satu periode di panel kiri untuk menampilkan
+                dashboard.
               </p>
             </div>
           )}

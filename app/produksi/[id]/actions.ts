@@ -13,6 +13,7 @@ export async function getInventory() {
   if (error) return [];
   return data;
 }
+
 // --- 1. GET DETAIL PERIODE, RECORD & TRANSAKSI PENGELUARAN ---
 export async function getPeriodDetail(periodId: string) {
   const supabase = await createClient();
@@ -58,6 +59,7 @@ export async function getPeriodDetail(periodId: string) {
 
     return {
       ...r,
+      // Total Modal Pagi (Frontend / UI view) adalah gabungan stok gudang dan uang cash
       modal_pagi: Number(r.modal_stok || 0) + Number(r.modal_cash || 0),
       omset_malam: Number(r.omzet || 0),
       detail_stok,
@@ -82,14 +84,30 @@ export async function saveProduksi(periodId: string, payloadStr: string) {
   if (!user) throw new Error("Unauthorized");
 
   const payload = JSON.parse(payloadStr);
-  const { id, date, modal_pagi, detail_stok, detail_harian, produksi_pcs } =
-    payload;
+  
+  // KITA AMBIL KEMBALI modal_pagi DARI PAYLOAD
+  const { id, date, modal_pagi, detail_stok, detail_harian, produksi_pcs } = payload;
+  
   const rincianBahanData = { detail_stok, detail_harian };
 
-  // 2A. LOGIKA KALKULASI SELISIH STOK
+  // ==========================================
+  // LOGIKA BARU: HITUNG STOK & CASH LEBIH AMAN
+  // ==========================================
+  
+  // 1. Hitung Pengeluaran Uang Tunai (modal_cash) murni dari detail_harian
+  const totalModalCash = detail_harian.reduce((sum: number, item: any) => {
+      return sum + Number(item.price || 0);
+  }, 0);
+
+  // 2. Hitung HPP Gudang (modal_stok) dengan cara: Modal Pagi - Modal Cash
+  // Ini menghindari error karena backend tidak perlu mencari harga satuan di database lagi.
+  const totalModalStok = Number(modal_pagi || 0) - totalModalCash;
+
+  // ==========================================
+
+  // 2A. LOGIKA KALKULASI SELISIH STOK (Sudah Otomatis Hitung Tambah/Kurang)
   const stockDiff: Record<string, number> = {};
 
-  // Jika ini UPDATE (id ada), kita kembalikan dulu stok lama ke gudang
   if (id) {
     const { data: oldRec } = await supabase
       .from("prod_daily_records")
@@ -110,14 +128,12 @@ export async function saveProduksi(periodId: string, payloadStr: string) {
     }
   }
 
-  // Kurangi dengan pemakaian stok yang baru
   detail_stok.forEach((item: any) => {
     if (item.itemId)
       stockDiff[item.itemId] =
         (stockDiff[item.itemId] || 0) - Number(item.qty || 0);
   });
 
-  // Terapkan selisih ke tabel prod_inventory (Gudang)
   const itemIdsToUpdate = Object.keys(stockDiff);
   if (itemIdsToUpdate.length > 0) {
     const { data: inventoryData } = await supabase
@@ -143,7 +159,9 @@ export async function saveProduksi(periodId: string, payloadStr: string) {
     const { error } = await supabase
       .from("prod_daily_records")
       .update({
-        modal_stok: modal_pagi,
+        // UPDATE DENGAN VARIABEL YANG SUDAH DIPISAH
+        modal_stok: totalModalStok,
+        modal_cash: totalModalCash,
         rincian_bahan: rincianBahanData,
         produksi_pcs: Number(produksi_pcs) || 0,
       })
@@ -155,8 +173,9 @@ export async function saveProduksi(periodId: string, payloadStr: string) {
         period_id: periodId,
         user_id: user.id,
         date,
-        modal_stok: modal_pagi,
-        modal_cash: 0,
+        // INSERT DENGAN VARIABEL YANG SUDAH DIPISAH
+        modal_stok: totalModalStok,
+        modal_cash: totalModalCash,
         rincian_bahan: rincianBahanData,
         produksi_pcs: Number(produksi_pcs) || 0,
         omzet: 0,
@@ -202,7 +221,6 @@ export async function deleteDailyRecord(recordId: string) {
     .single();
 
   if (record && record.rincian_bahan) {
-    // Kembalikan stok ke gudang jika catatan harian dihapus
     const bahan =
       typeof record.rincian_bahan === "string"
         ? JSON.parse(record.rincian_bahan)
@@ -245,14 +263,12 @@ export async function deleteDailyRecord(recordId: string) {
 export async function addInventoryItem(name: string, unit: string, initialStock: number) {
   const supabase = await createClient();
 
-  // 1. Ambil User ID yang sedang login
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
 
-  // 2. Sertakan user_id saat insert ke Supabase
   const { error } = await supabase.from("prod_inventory").insert([
     {
-      user_id: user.id, // <--- TAMBAHKAN USER ID DI SINI
+      user_id: user.id,
       name,
       unit,
       current_stock: Number(initialStock) || 0,

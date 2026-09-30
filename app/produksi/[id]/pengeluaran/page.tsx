@@ -40,6 +40,7 @@ export default function PengeluaranPage({
 
   const [period, setPeriod] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [records, setRecords] = useState<any[]>([]); // Untuk mengambil Modal Cash Harian
   const [inventoryList, setInventoryList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,6 +70,7 @@ export default function PengeluaranPage({
       if (resDetail) {
         setPeriod(resDetail.period);
         setTransactions(resDetail.transactions || []);
+        setRecords(resDetail.records || []);
       }
       setInventoryList(invData || []);
     } catch (err) {
@@ -110,7 +112,7 @@ export default function PengeluaranPage({
     }
   };
 
-  // Kalkulasi Ringkasan Berdasarkan 3 Tipe
+  // --- 1. KALKULASI PENGELUARAN PER TIPE DARI TRANSAKSI ---
   const totalBelanjaStok = transactions
     .filter((t) => t.type === "belanja_stok")
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
@@ -123,12 +125,16 @@ export default function PengeluaranPage({
     .filter((t) => t.type === "kebutuhan")
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
-  // --- TAMBAHKAN KALKULASI INI ---
-  const totalPengeluaran = totalBelanjaStok + totalOperasional + totalKebutuhan;
+  // --- 2. KALKULASI PENGGUNAAN MODAL (TERPISAH DARI OMZET) ---
+  const modalAwal = Number(period?.modal_awal || 0);
 
-  // Asumsi: period.omzet adalah total uang masuk/modal yang ada
-  const totalPemasukan = period?.omzet || 0;
-  const sisaKas = totalPemasukan - totalPengeluaran;
+  let totalModalCashHarian = 0;
+  records.forEach((rec) => {
+    totalModalCashHarian += Number(rec.modal_cash || 0);
+  });
+
+  // Sisa Modal Awal = Modal Awal - (Belanja Stok + Belanja Cash Harian)
+  const sisaModalAwal = modalAwal - totalBelanjaStok - totalModalCashHarian - totalOperasional;
 
   // Filter Transaksi untuk Riwayat
   const filteredTransactions = transactions.filter((t) => {
@@ -152,7 +158,7 @@ export default function PengeluaranPage({
       {/* HEADER */}
       <div className="flex items-center justify-between pb-6 border-b border-zinc-200">
         <div className="flex items-center gap-3 sm:gap-4">
-          <Link href="/produksi">
+          <Link href={`/produksi/${periodId}`}>
             <Button
               variant="outline"
               size="icon"
@@ -173,37 +179,61 @@ export default function PengeluaranPage({
         </div>
       </div>
 
-      <Card className="p-6 bg-emerald-600 rounded-3xl text-white shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <p className="text-emerald-100 font-medium text-sm">
-            Total Sisa Saldo / Kas Tersedia
+      {/* KARTU 1: STATUS SISA MODAL AWAL */}
+      <Card className="p-5 sm:p-6 bg-emerald-600 rounded-3xl text-white shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden">
+        <div className="w-full z-10">
+          <p className="text-emerald-100 font-medium text-sm flex items-center gap-2">
+            Sisa Modal Awal (Murni)
           </p>
-          <h2 className="text-3xl sm:text-4xl font-black mt-1">
-            {formatRupiah(sisaKas)}
+          <h2 className="text-3xl sm:text-4xl font-black mt-1 mb-4">
+            {formatRupiah(sisaModalAwal)}
           </h2>
-          <p className="text-emerald-200 text-xs mt-2">
-            Dari Total Pemasukan:{" "}
-            <span className="font-bold">{formatRupiah(totalPemasukan)}</span>
-          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs bg-emerald-700/50 p-3.5 rounded-xl border border-emerald-500/30">
+            <div>
+              <p className="text-emerald-200 mb-1">Dana Modal Awal</p>
+              <p className="font-bold text-sm">{formatRupiah(modalAwal)}</p>
+            </div>
+            <div>
+              <p className="text-emerald-200 mb-1">Terpakai Stok Gudang</p>
+              <p className="font-bold text-rose-300 text-sm">
+                -{formatRupiah(totalBelanjaStok)}
+              </p>
+            </div>
+            <div>
+              <p className="text-emerald-200 mb-1">Terpakai Cash Harian</p>
+              <p className="font-bold text-rose-300 text-sm">
+                -{formatRupiah(totalModalCashHarian)}
+              </p>
+            </div>
+            <div>
+              <p className="text-emerald-200 mb-1">Terpakai Operasional</p>
+              <p className="font-bold text-rose-300 text-sm">
+                -{formatRupiah(totalOperasional)}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="p-3 bg-white/20 rounded-2xl">
-          <Wallet className="w-8 h-8 text-white" />
+        <div className="p-4 bg-white/10 border border-white/20 rounded-3xl hidden sm:block shrink-0 z-10">
+          <Wallet className="w-12 h-12 text-white" />
         </div>
+        {/* Dekorasi Background */}
+        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-emerald-500 rounded-full blur-3xl opacity-50 z-0 pointer-events-none"></div>
       </Card>
 
-      {/* SUMMARY KARTU (3 TIPE) */}
+      {/* SUMMARY KARTU: REKAP PENGELUARAN PER TIPE */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Belanja Stok */}
         <Card className="p-5 border-amber-200 bg-amber-50/60 rounded-2xl flex items-start justify-between shadow-sm relative overflow-hidden">
           <div className="space-y-1 z-10">
             <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">
-              Belanja Stok (Modal)
+              Total Belanja Stok
             </p>
             <p className="text-2xl font-black text-amber-950">
               {formatRupiah(totalBelanjaStok)}
             </p>
             <p className="text-[11px] text-amber-700 font-medium pt-1">
-              *Otomatis menambah stok gudang
+              *Otomatis memotong Modal Awal
             </p>
           </div>
           <div className="p-2.5 bg-amber-100/80 text-amber-700 rounded-xl">
@@ -215,7 +245,7 @@ export default function PengeluaranPage({
         <Card className="p-5 border-indigo-200 bg-indigo-50/60 rounded-2xl flex items-start justify-between shadow-sm relative overflow-hidden">
           <div className="space-y-1 z-10">
             <p className="text-xs font-bold text-indigo-800 uppercase tracking-wider">
-              Operasional Usaha
+              Total Operasional
             </p>
             <p className="text-2xl font-black text-indigo-950">
               {formatRupiah(totalOperasional)}
@@ -233,13 +263,13 @@ export default function PengeluaranPage({
         <Card className="p-5 border-rose-200 bg-rose-50/60 rounded-2xl flex items-start justify-between shadow-sm relative overflow-hidden">
           <div className="space-y-1 z-10">
             <p className="text-xs font-bold text-rose-800 uppercase tracking-wider">
-              Kebutuhan Pribadi
+              Total Pribadi (Prive)
             </p>
             <p className="text-2xl font-black text-rose-950">
               {formatRupiah(totalKebutuhan)}
             </p>
             <p className="text-[11px] text-rose-700 font-medium pt-1">
-              *Pengeluaran non-usaha / prive
+              *Pengeluaran non-usaha
             </p>
           </div>
           <div className="p-2.5 bg-rose-100/80 text-rose-700 rounded-xl">
@@ -443,7 +473,6 @@ export default function PengeluaranPage({
           {filteredTransactions.length > 0 ? (
             <div className="divide-y divide-zinc-100 max-h-[520px] overflow-y-auto pr-1">
               {filteredTransactions.map((tx) => {
-                // Tentukan Styling Badge Menurut Tipe
                 let badgeStyle = "bg-zinc-100 text-zinc-700";
                 let badgeLabel = "Lainnya";
 
