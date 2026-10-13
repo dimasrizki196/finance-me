@@ -121,6 +121,7 @@ export default function ProduksiPage() {
       let pengeluaranPribadi = 0;
       let pengeluaranOperasional = 0;
       let totalBelanjaStok = 0; // INI YANG AKAN KITA PAKAI UNTUK SISA MODAL
+      let pengeluaranTabungan = 0; // Variabel baru untuk Tabungan
 
       // Data dari Transaksi / Kas Keluar
       if (trxs && Array.isArray(trxs)) {
@@ -132,6 +133,9 @@ export default function ProduksiPage() {
             pengeluaranOperasional += Number(t.amount || 0);
           } else if (type.includes("belanja_stok")) {
             totalBelanjaStok += Number(t.amount || 0);
+          } else if (type.includes("tabungan")) {
+            // Tangkap pengeluaran untuk Tabungan
+            pengeluaranTabungan += Number(t.amount || 0);
           }
         });
       }
@@ -161,6 +165,7 @@ export default function ProduksiPage() {
         labaBersih,
         pengeluaranPribadi,
         pengeluaranOperasional,
+        pengeluaranTabungan, // Masukkan ke state summary
       });
     } catch (error) {
       console.error("Gagal memuat ringkasan", error);
@@ -575,6 +580,8 @@ export default function ProduksiPage() {
                   const labaBersih = summaryData.labaBersih || 0;
                   const pengeluaranPribadi =
                     summaryData.pengeluaranPribadi || 0;
+                  const pengeluaranTabungan =
+                    summaryData.pengeluaranTabungan || 0; // Ekstrak pengeluaran tabungan
 
                   // 1. Sisa Modal Dasar (Murni Terintegrasi dengan Kas Keluar)
                   const sisaModalDasar =
@@ -608,14 +615,15 @@ export default function ProduksiPage() {
                   // 4. Sisa Modal Akhir
                   const sisaModalAkhir = sisaModalDasar + terpakaiModalSimpan;
 
-                  // 5. Hitungan Sisa Kebutuhan Pribadi
+                  // 5. Hitungan Sisa Kebutuhan Pribadi & Tabungan
                   const sisaKebutuhanPribadi =
                     jatahKebutuhanPribadi - pengeluaranPribadi;
+                  const sisaTabungan = jatahTabungan - pengeluaranTabungan;
 
                   // 6. Total Cash Fisik
-                  // Rumus: Sisa Modal Akhir + Sisa Uang Pribadi + Sisa Uang Modal Simpan (jika ada) + Uang Tabungan
+                  // Rumus: Sisa Modal Akhir + Sisa Uang Pribadi + Sisa Uang Modal Simpan (jika ada) + Sisa Uang Tabungan
                   const sisaAlokasiLabaLainnya =
-                    sisaKebutuhanPribadi + sisaModalSimpan + jatahTabungan;
+                    sisaKebutuhanPribadi + sisaModalSimpan + sisaTabungan;
                   const totalCashDipegang =
                     sisaModalAkhir + sisaAlokasiLabaLainnya;
 
@@ -662,19 +670,19 @@ export default function ProduksiPage() {
                             </span>
                           </div>
                           <div className="flex justify-between items-center text-zinc-600">
-                            <span>- Belanja Stok (Gudang)</span>
+                            <span>Belanja Stok (Gudang)</span>
                             <span className="font-bold text-rose-600">
                               -{formatRupiah(totalBelanjaStok)}
                             </span>
                           </div>
                           <div className="flex justify-between items-center text-zinc-600">
-                            <span>- Modal Cash Harian</span>
+                            <span>Modal Cash Harian</span>
                             <span className="font-bold text-rose-600">
                               -{formatRupiah(modalHarian)}
                             </span>
                           </div>
                           <div className="flex justify-between items-center text-zinc-600">
-                            <span>- Operasional Usaha</span>
+                            <span>Operasional Usaha</span>
                             <span className="font-bold text-rose-600">
                               -{formatRupiah(pengeluaranOperasional)}
                             </span>
@@ -838,20 +846,30 @@ export default function ProduksiPage() {
                             </div>
                           </div>
 
-                          {/* Tabungan */}
-                          <div className="bg-white p-3 rounded-xl border border-blue-100 shadow-2xs">
-                            <div className="flex justify-between items-center mb-0.5">
+                          {/* Tabungan (Realtime Tracker) */}
+                          <div className="bg-white p-3 rounded-xl border border-blue-100 shadow-2xs space-y-1">
+                            <div className="flex justify-between items-center">
                               <span className="font-bold text-zinc-800">
                                 Tabungan Finansial
                               </span>
-                              <span className="font-black text-indigo-600">
-                                {formatRupiah(jatahTabungan)}
+                              <span
+                                className={`font-black ${sisaTabungan < 0 ? "text-rose-600" : "text-indigo-600"}`}
+                              >
+                                Sisa: {formatRupiah(sisaTabungan)}
                               </span>
                             </div>
-                            <p className="text-[10px] text-zinc-500">
-                              Jatah {allocations.pct_tabungan}% dari Laba
-                              Bersih.
-                            </p>
+                            <div className="flex justify-between items-center text-[11px] text-zinc-500 pt-1 border-t border-zinc-100">
+                              <span>
+                                Jatah ({allocations.pct_tabungan}%):{" "}
+                                <b>{formatRupiah(jatahTabungan)}</b>
+                              </span>
+                              <span>
+                                Terpakai:{" "}
+                                <b className="text-rose-600">
+                                  -{formatRupiah(pengeluaranTabungan)}
+                                </b>
+                              </span>
+                            </div>
                           </div>
                         </div>
 

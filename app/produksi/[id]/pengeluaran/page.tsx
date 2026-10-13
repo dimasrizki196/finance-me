@@ -13,6 +13,7 @@ import {
   User,
   Filter,
   Package,
+  PiggyBank,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,7 +29,8 @@ const formatRupiah = (angka: number) =>
     minimumFractionDigits: 0,
   }).format(angka || 0);
 
-type ExpenseType = "belanja_stok" | "kebutuhan" | "operasional";
+// Tambahkan "tabungan" ke dalam tipe expense
+type ExpenseType = "belanja_stok" | "kebutuhan" | "operasional" | "tabungan";
 
 export default function PengeluaranPage({
   params,
@@ -40,7 +42,7 @@ export default function PengeluaranPage({
 
   const [period, setPeriod] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [records, setRecords] = useState<any[]>([]); // Untuk mengambil Modal Cash Harian
+  const [records, setRecords] = useState<any[]>([]);
   const [inventoryList, setInventoryList] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -122,19 +124,38 @@ export default function PengeluaranPage({
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   const totalKebutuhan = transactions
-    .filter((t) => t.type === "kebutuhan")
+    .filter((t) => t.type === "kebutuhan" || t.type === "pribadi")
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
-  // --- 2. KALKULASI PENGGUNAAN MODAL (TERPISAH DARI OMZET) ---
+  const totalTabungan = transactions
+    .filter((t) => t.type === "tabungan")
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  // --- 2. KALKULASI PENGGUNAAN MODAL (TERINTEGRASI DENGAN OMZET) ---
   const modalAwal = Number(period?.modal_awal || 0);
 
+  let totalModalStokHPP = 0;
   let totalModalCashHarian = 0;
+  let totalOmzet = 0;
+
   records.forEach((rec) => {
+    totalModalStokHPP += Number(rec.modal_stok || 0);
     totalModalCashHarian += Number(rec.modal_cash || 0);
+    totalOmzet += Number(rec.omset_malam || 0);
   });
 
-  // Sisa Modal Awal = Modal Awal - (Belanja Stok + Belanja Cash Harian)
-  const sisaModalAwal = modalAwal - totalBelanjaStok - totalModalCashHarian - totalOperasional;
+  // Hitung Modal Masuk Harian (Omzet - Laba Bersih)
+  const totalPengeluaranHPP = totalModalStokHPP + totalModalCashHarian;
+  const labaBersih = totalOmzet - totalPengeluaranHPP;
+  const modalMasukHarian = totalOmzet - labaBersih;
+
+  // Sisa Modal = Modal Awal - (Stok Gudang + Cash Harian + Operasional) + Modal Masuk Harian (Omzet)
+  const sisaModalAwal =
+    modalAwal -
+    totalBelanjaStok -
+    totalModalCashHarian -
+    totalOperasional +
+    modalMasukHarian;
 
   // Filter Transaksi untuk Riwayat
   const filteredTransactions = transactions.filter((t) => {
@@ -183,33 +204,40 @@ export default function PengeluaranPage({
       <Card className="p-5 sm:p-6 bg-emerald-600 rounded-3xl text-white shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden">
         <div className="w-full z-10">
           <p className="text-emerald-100 font-medium text-sm flex items-center gap-2">
-            Sisa Modal Awal (Murni)
+            Sisa Modal Usaha (Terintegrasi)
           </p>
           <h2 className="text-3xl sm:text-4xl font-black mt-1 mb-4">
             {formatRupiah(sisaModalAwal)}
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs bg-emerald-700/50 p-3.5 rounded-xl border border-emerald-500/30">
+          {/* Grid dirubah jadi 5 kolom untuk mengakomodasi Modal Masuk */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs bg-emerald-700/50 p-3.5 rounded-xl border border-emerald-500/30">
             <div>
-              <p className="text-emerald-200 mb-1">Dana Modal Awal</p>
+              <p className="text-emerald-200 mb-1">Modal Awal</p>
               <p className="font-bold text-sm">{formatRupiah(modalAwal)}</p>
             </div>
             <div>
-              <p className="text-emerald-200 mb-1">Terpakai Stok Gudang</p>
+              <p className="text-emerald-200 mb-1">Stok Gudang</p>
               <p className="font-bold text-rose-300 text-sm">
                 -{formatRupiah(totalBelanjaStok)}
               </p>
             </div>
             <div>
-              <p className="text-emerald-200 mb-1">Terpakai Cash Harian</p>
+              <p className="text-emerald-200 mb-1">Cash Harian</p>
               <p className="font-bold text-rose-300 text-sm">
                 -{formatRupiah(totalModalCashHarian)}
               </p>
             </div>
             <div>
-              <p className="text-emerald-200 mb-1">Terpakai Operasional</p>
+              <p className="text-emerald-200 mb-1">Operasional</p>
               <p className="font-bold text-rose-300 text-sm">
                 -{formatRupiah(totalOperasional)}
+              </p>
+            </div>
+            <div>
+              <p className="text-emerald-200 mb-1">+ Modal Masuk</p>
+              <p className="font-bold text-emerald-300 text-sm">
+                +{formatRupiah(modalMasukHarian)}
               </p>
             </div>
           </div>
@@ -222,58 +250,72 @@ export default function PengeluaranPage({
       </Card>
 
       {/* SUMMARY KARTU: REKAP PENGELUARAN PER TIPE */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         {/* Belanja Stok */}
-        <Card className="p-5 border-amber-200 bg-amber-50/60 rounded-2xl flex items-start justify-between shadow-sm relative overflow-hidden">
-          <div className="space-y-1 z-10">
-            <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">
-              Total Belanja Stok
+        <Card className="p-4 sm:p-5 border-amber-200 bg-amber-50/60 rounded-2xl flex flex-col justify-between shadow-sm relative overflow-hidden">
+          <div className="flex justify-between items-start mb-2">
+            <div className="p-2 bg-amber-100/80 text-amber-700 rounded-lg">
+              <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+          </div>
+          <div className="space-y-0.5 z-10 mt-2">
+            <p className="text-[10px] sm:text-xs font-bold text-amber-800 uppercase tracking-wider">
+              Belanja Stok
             </p>
-            <p className="text-2xl font-black text-amber-950">
+            <p className="text-lg sm:text-xl font-black text-amber-950">
               {formatRupiah(totalBelanjaStok)}
             </p>
-            <p className="text-[11px] text-amber-700 font-medium pt-1">
-              *Otomatis memotong Modal Awal
-            </p>
-          </div>
-          <div className="p-2.5 bg-amber-100/80 text-amber-700 rounded-xl">
-            <ShoppingBag className="w-6 h-6" />
           </div>
         </Card>
 
         {/* Operasional Usaha */}
-        <Card className="p-5 border-indigo-200 bg-indigo-50/60 rounded-2xl flex items-start justify-between shadow-sm relative overflow-hidden">
-          <div className="space-y-1 z-10">
-            <p className="text-xs font-bold text-indigo-800 uppercase tracking-wider">
-              Total Operasional
+        <Card className="p-4 sm:p-5 border-indigo-200 bg-indigo-50/60 rounded-2xl flex flex-col justify-between shadow-sm relative overflow-hidden">
+          <div className="flex justify-between items-start mb-2">
+            <div className="p-2 bg-indigo-100/80 text-indigo-700 rounded-lg">
+              <Briefcase className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+          </div>
+          <div className="space-y-0.5 z-10 mt-2">
+            <p className="text-[10px] sm:text-xs font-bold text-indigo-800 uppercase tracking-wider">
+              Operasional
             </p>
-            <p className="text-2xl font-black text-indigo-950">
+            <p className="text-lg sm:text-xl font-black text-indigo-950">
               {formatRupiah(totalOperasional)}
             </p>
-            <p className="text-[11px] text-indigo-700 font-medium pt-1">
-              *Biaya sewa, listrik, gaji, dll.
-            </p>
-          </div>
-          <div className="p-2.5 bg-indigo-100/80 text-indigo-700 rounded-xl">
-            <Briefcase className="w-6 h-6" />
           </div>
         </Card>
 
         {/* Kebutuhan Pribadi */}
-        <Card className="p-5 border-rose-200 bg-rose-50/60 rounded-2xl flex items-start justify-between shadow-sm relative overflow-hidden">
-          <div className="space-y-1 z-10">
-            <p className="text-xs font-bold text-rose-800 uppercase tracking-wider">
-              Total Pribadi (Prive)
+        <Card className="p-4 sm:p-5 border-rose-200 bg-rose-50/60 rounded-2xl flex flex-col justify-between shadow-sm relative overflow-hidden">
+          <div className="flex justify-between items-start mb-2">
+            <div className="p-2 bg-rose-100/80 text-rose-700 rounded-lg">
+              <User className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+          </div>
+          <div className="space-y-0.5 z-10 mt-2">
+            <p className="text-[10px] sm:text-xs font-bold text-rose-800 uppercase tracking-wider">
+              Pribadi (Prive)
             </p>
-            <p className="text-2xl font-black text-rose-950">
+            <p className="text-lg sm:text-xl font-black text-rose-950">
               {formatRupiah(totalKebutuhan)}
             </p>
-            <p className="text-[11px] text-rose-700 font-medium pt-1">
-              *Pengeluaran non-usaha
-            </p>
           </div>
-          <div className="p-2.5 bg-rose-100/80 text-rose-700 rounded-xl">
-            <User className="w-6 h-6" />
+        </Card>
+
+        {/* Penggunaan Tabungan */}
+        <Card className="p-4 sm:p-5 border-cyan-200 bg-cyan-50/60 rounded-2xl flex flex-col justify-between shadow-sm relative overflow-hidden">
+          <div className="flex justify-between items-start mb-2">
+            <div className="p-2 bg-cyan-100/80 text-cyan-700 rounded-lg">
+              <PiggyBank className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+          </div>
+          <div className="space-y-0.5 z-10 mt-2">
+            <p className="text-[10px] sm:text-xs font-bold text-cyan-800 uppercase tracking-wider">
+              Pakai Tabungan
+            </p>
+            <p className="text-lg sm:text-xl font-black text-cyan-950">
+              {formatRupiah(totalTabungan)}
+            </p>
           </div>
         </Card>
       </div>
@@ -318,6 +360,7 @@ export default function PengeluaranPage({
                 <option value="kebutuhan">
                   👤 Kebutuhan Pribadi (Prive / Konsumsi)
                 </option>
+                <option value="tabungan">🏦 Pengeluaran dari Tabungan</option>
               </select>
             </div>
 
@@ -387,7 +430,9 @@ export default function PengeluaranPage({
                     ? "Cth: Beli Tepung Terigu 2 Sak"
                     : type === "operasional"
                       ? "Cth: Bayar Listrik Toko Bulan Ini"
-                      : "Cth: Beli Makan Siang"
+                      : type === "tabungan"
+                        ? "Cth: Bayar Servis Motor"
+                        : "Cth: Beli Makan Siang"
                 }
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -419,7 +464,7 @@ export default function PengeluaranPage({
                 variant={filterType === "all" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setFilterType("all")}
-                className={`rounded-full text-xs font-semibold h-8 ${
+                className={`rounded-full shrink-0 text-xs font-semibold h-8 ${
                   filterType === "all"
                     ? "bg-zinc-900 text-white"
                     : "text-zinc-600 border-zinc-200 hover:bg-zinc-100"
@@ -432,7 +477,7 @@ export default function PengeluaranPage({
                 variant={filterType === "belanja_stok" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setFilterType("belanja_stok")}
-                className={`rounded-full text-xs font-semibold h-8 ${
+                className={`rounded-full shrink-0 text-xs font-semibold h-8 ${
                   filterType === "belanja_stok"
                     ? "bg-amber-600 text-white"
                     : "text-amber-800 border-amber-200 bg-amber-50 hover:bg-amber-100"
@@ -445,7 +490,7 @@ export default function PengeluaranPage({
                 variant={filterType === "operasional" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setFilterType("operasional")}
-                className={`rounded-full text-xs font-semibold h-8 ${
+                className={`rounded-full shrink-0 text-xs font-semibold h-8 ${
                   filterType === "operasional"
                     ? "bg-indigo-600 text-white"
                     : "text-indigo-800 border-indigo-200 bg-indigo-50 hover:bg-indigo-100"
@@ -458,13 +503,26 @@ export default function PengeluaranPage({
                 variant={filterType === "kebutuhan" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setFilterType("kebutuhan")}
-                className={`rounded-full text-xs font-semibold h-8 ${
+                className={`rounded-full shrink-0 text-xs font-semibold h-8 ${
                   filterType === "kebutuhan"
                     ? "bg-rose-600 text-white"
                     : "text-rose-800 border-rose-200 bg-rose-50 hover:bg-rose-100"
                 }`}
               >
                 Kebutuhan
+              </Button>
+              <Button
+                type="button"
+                variant={filterType === "tabungan" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilterType("tabungan")}
+                className={`rounded-full shrink-0 text-xs font-semibold h-8 ${
+                  filterType === "tabungan"
+                    ? "bg-cyan-600 text-white"
+                    : "text-cyan-800 border-cyan-200 bg-cyan-50 hover:bg-cyan-100"
+                }`}
+              >
+                Tabungan
               </Button>
             </div>
           </div>
@@ -484,9 +542,12 @@ export default function PengeluaranPage({
                   badgeStyle =
                     "bg-indigo-100 text-indigo-800 border-indigo-200/60";
                   badgeLabel = "Operasional";
-                } else if (tx.type === "kebutuhan") {
+                } else if (tx.type === "kebutuhan" || tx.type === "pribadi") {
                   badgeStyle = "bg-rose-100 text-rose-800 border-rose-200/60";
                   badgeLabel = "Kebutuhan";
+                } else if (tx.type === "tabungan") {
+                  badgeStyle = "bg-cyan-100 text-cyan-800 border-cyan-200/60";
+                  badgeLabel = "Tabungan";
                 }
 
                 return (
