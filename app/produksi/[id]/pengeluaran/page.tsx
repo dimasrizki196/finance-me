@@ -529,7 +529,7 @@ export default function PengeluaranPage({
 
           {/* LIST ITEMS */}
           {filteredTransactions.length > 0 ? (
-            <div className="divide-y divide-zinc-100 max-h-[520px] overflow-y-auto pr-1">
+            <div className="divide-y divide-zinc-100 max-h-130 overflow-y-auto pr-1">
               {filteredTransactions.map((tx) => {
                 let badgeStyle = "bg-zinc-100 text-zinc-700";
                 let badgeLabel = "Lainnya";

@@ -19,12 +19,12 @@ const nextConfig = {
   },
 
   // 4. Mencegah build gagal hanya karena peringatan linting/typing kecil
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  // eslint: {
+  //   ignoreDuringBuilds: true,
+  // },
+  // typescript: {
+  //   ignoreBuildErrors: true,
+  // },
 };
 
 module.exports = nextConfig;

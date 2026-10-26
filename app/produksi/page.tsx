@@ -77,9 +77,21 @@ export default function ProduksiPage() {
   const [isSavingAlloc, setIsSavingAlloc] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
+  // Load awal
   useEffect(() => {
     loadData();
   }, []);
+
+  // FIX CACHE NEXT.JS: Auto-refresh data saat user kembali/fokus ke tab ini
+  useEffect(() => {
+    const handleFocus = () => {
+      if (selectedPeriod) {
+        handleSelectPeriod(selectedPeriod);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [selectedPeriod]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -105,7 +117,7 @@ export default function ProduksiPage() {
       const res = await getPeriodDetail(period.id);
       const trxs = await getPeriodTransactions(period.id);
 
-      let totalModalStokHPP = 0; // HPP (Hanya untuk hitung Laba Bersih)
+      let totalModalStokHPP = 0;
       let totalModalCash = 0;
       let totalOmzet = 0;
 
@@ -120,8 +132,8 @@ export default function ProduksiPage() {
 
       let pengeluaranPribadi = 0;
       let pengeluaranOperasional = 0;
-      let totalBelanjaStok = 0; // INI YANG AKAN KITA PAKAI UNTUK SISA MODAL
-      let pengeluaranTabungan = 0; // Variabel baru untuk Tabungan
+      let totalBelanjaStok = 0;
+      let pengeluaranTabungan = 0;
 
       // Data dari Transaksi / Kas Keluar
       if (trxs && Array.isArray(trxs)) {
@@ -134,18 +146,17 @@ export default function ProduksiPage() {
           } else if (type.includes("belanja_stok")) {
             totalBelanjaStok += Number(t.amount || 0);
           } else if (type.includes("tabungan")) {
-            // Tangkap pengeluaran untuk Tabungan
             pengeluaranTabungan += Number(t.amount || 0);
           }
         });
       }
 
-      // --- LOGIKA LABA RUGI P&L (Untuk dapat Nilai Laba Bersih) ---
+      // --- LOGIKA LABA RUGI P&L ---
       const totalPengeluaranHPP = totalModalStokHPP + totalModalCash;
       const labaBersih = totalOmzet - totalPengeluaranHPP;
 
-      // Modal Masuk Harian (Omzet dikurangi Laba Bersih)
-      const modalMasukHarian = totalOmzet - labaBersih;
+      // FIX MATH: Modal masuk tidak bisa lebih besar dari total Omzet fisik.
+      const modalMasukHarian = Math.min(totalOmzet, totalPengeluaranHPP);
 
       const modalAwal = Number(res?.period?.modal_awal || 0);
       const initialSettings = res?.period?.settings || {
@@ -158,14 +169,14 @@ export default function ProduksiPage() {
 
       setSummaryData({
         modalAwal,
-        totalBelanjaStok, // Transaksi Fisik Gudang
-        totalModalCash, // Belanja Harian
+        totalBelanjaStok,
+        totalModalCash,
         totalOmzet,
         modalMasukHarian,
         labaBersih,
         pengeluaranPribadi,
         pengeluaranOperasional,
-        pengeluaranTabungan, // Masukkan ke state summary
+        pengeluaranTabungan,
       });
     } catch (error) {
       console.error("Gagal memuat ringkasan", error);
@@ -570,7 +581,7 @@ export default function ProduksiPage() {
               ) : summaryData ? (
                 (() => {
                   const modalAwal = summaryData.modalAwal || 0;
-                  const totalBelanjaStok = summaryData.totalBelanjaStok || 0; // Transaksi Asli (Rp 686.610)
+                  const totalBelanjaStok = summaryData.totalBelanjaStok || 0;
                   const modalHarian = summaryData.totalModalCash || 0;
                   const pengeluaranOperasional =
                     summaryData.pengeluaranOperasional || 0;
@@ -581,9 +592,9 @@ export default function ProduksiPage() {
                   const pengeluaranPribadi =
                     summaryData.pengeluaranPribadi || 0;
                   const pengeluaranTabungan =
-                    summaryData.pengeluaranTabungan || 0; // Ekstrak pengeluaran tabungan
+                    summaryData.pengeluaranTabungan || 0;
 
-                  // 1. Sisa Modal Dasar (Murni Terintegrasi dengan Kas Keluar)
+                  // 1. Sisa Modal Dasar
                   const sisaModalDasar =
                     modalAwal -
                     totalBelanjaStok -
@@ -591,29 +602,38 @@ export default function ProduksiPage() {
                     pengeluaranOperasional +
                     modalMasukHarian;
 
+                  // FIX MATH: Jika laba bersih sedang minus/rugi, jangan beri jatah alokasi (karena akan memotong uang fisik)
+                  const labaUntukAlokasi = Math.max(0, labaBersih);
+
                   // 2. Alokasi Jatah Laba
                   const jatahModalSimpan =
-                    labaBersih * (allocations.pct_modal / 100);
+                    labaUntukAlokasi * (allocations.pct_modal / 100);
                   const jatahKebutuhanPribadi =
-                    labaBersih * (allocations.pct_kebutuhan / 100);
+                    labaUntukAlokasi * (allocations.pct_kebutuhan / 100);
                   const jatahTabungan =
-                    labaBersih * (allocations.pct_tabungan / 100);
+                    labaUntukAlokasi * (allocations.pct_tabungan / 100);
 
-                  // 3. Realtime Pemakaian Modal Simpan
-                  // Jika sisaModalDasar kurang dari Modal Awal, kita "pakai" Jatah Modal Simpan untuk menambalnya.
-                  const kebutuhanReplenish = Math.max(
-                    0,
-                    modalAwal - sisaModalDasar,
-                  );
-                  const terpakaiModalSimpan = Math.min(
-                    jatahModalSimpan,
-                    kebutuhanReplenish,
-                  );
-                  const sisaModalSimpan =
-                    jatahModalSimpan - terpakaiModalSimpan;
+                  // 3. Realtime Pemakaian & Surplus Modal Simpan
+                  let terpakaiModalSimpan = 0;
+                  let sisaModalSimpan = 0;
+                  let sisaModalAkhir = 0;
+                  let surplusModalPindahKeGudang = 0;
 
-                  // 4. Sisa Modal Akhir
-                  const sisaModalAkhir = sisaModalDasar + terpakaiModalSimpan;
+                  if (sisaModalDasar < modalAwal) {
+                    const kebutuhanReplenish = modalAwal - sisaModalDasar;
+                    terpakaiModalSimpan = Math.min(
+                      jatahModalSimpan,
+                      kebutuhanReplenish,
+                    );
+                    sisaModalSimpan = jatahModalSimpan - terpakaiModalSimpan;
+                    sisaModalAkhir = sisaModalDasar + terpakaiModalSimpan;
+                  } else {
+                    surplusModalPindahKeGudang = sisaModalDasar - modalAwal;
+                    terpakaiModalSimpan = 0;
+                    sisaModalSimpan =
+                      jatahModalSimpan + surplusModalPindahKeGudang;
+                    sisaModalAkhir = modalAwal;
+                  }
 
                   // 5. Hitungan Sisa Kebutuhan Pribadi & Tabungan
                   const sisaKebutuhanPribadi =
@@ -621,7 +641,6 @@ export default function ProduksiPage() {
                   const sisaTabungan = jatahTabungan - pengeluaranTabungan;
 
                   // 6. Total Cash Fisik
-                  // Rumus: Sisa Modal Akhir + Sisa Uang Pribadi + Sisa Uang Modal Simpan (jika ada) + Sisa Uang Tabungan
                   const sisaAlokasiLabaLainnya =
                     sisaKebutuhanPribadi + sisaModalSimpan + sisaTabungan;
                   const totalCashDipegang =
@@ -670,25 +689,24 @@ export default function ProduksiPage() {
                             </span>
                           </div>
                           <div className="flex justify-between items-center text-zinc-600">
-                            <span>Belanja Stok (Gudang)</span>
+                            <span>- Belanja Stok (Gudang)</span>
                             <span className="font-bold text-rose-600">
                               -{formatRupiah(totalBelanjaStok)}
                             </span>
                           </div>
                           <div className="flex justify-between items-center text-zinc-600">
-                            <span>Modal Cash Harian</span>
+                            <span>- Modal Cash Harian</span>
                             <span className="font-bold text-rose-600">
                               -{formatRupiah(modalHarian)}
                             </span>
                           </div>
                           <div className="flex justify-between items-center text-zinc-600">
-                            <span>Operasional Usaha</span>
+                            <span>- Operasional Usaha</span>
                             <span className="font-bold text-rose-600">
                               -{formatRupiah(pengeluaranOperasional)}
                             </span>
                           </div>
 
-                          {/* SISA MODAL AWAL (Sama persis dengan halaman Kas Keluar) */}
                           <div className="flex justify-between items-center bg-zinc-50 p-2 rounded-lg border border-zinc-100 my-1.5">
                             <span className="text-[11px] font-bold text-zinc-700 uppercase">
                               Sisa Modal Awal
@@ -704,12 +722,22 @@ export default function ProduksiPage() {
                               +{formatRupiah(modalMasukHarian)}
                             </span>
                           </div>
-                          <div className="flex justify-between items-center text-zinc-600">
-                            <span>+ Alokasi Modal Simpan (Terpakai)</span>
-                            <span className="font-bold text-blue-600">
-                              +{formatRupiah(terpakaiModalSimpan)}
-                            </span>
-                          </div>
+
+                          {surplusModalPindahKeGudang > 0 ? (
+                            <div className="flex justify-between items-center text-zinc-600">
+                              <span>- Surplus Cair (Pindah ke Gudang)</span>
+                              <span className="font-bold text-amber-600">
+                                -{formatRupiah(surplusModalPindahKeGudang)}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-center text-zinc-600">
+                              <span>+ Alokasi Modal Simpan (Terpakai)</span>
+                              <span className="font-bold text-blue-600">
+                                +{formatRupiah(terpakaiModalSimpan)}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="border-t border-dashed border-zinc-200 pt-3 mt-2">
@@ -805,18 +833,36 @@ export default function ProduksiPage() {
                                 Jatah ({allocations.pct_modal}%):{" "}
                                 <b>{formatRupiah(jatahModalSimpan)}</b>
                               </span>
-                              <span>
-                                Terpakai:{" "}
-                                <b className="text-blue-500">
-                                  -{formatRupiah(terpakaiModalSimpan)}
-                                </b>
-                              </span>
+
+                              {surplusModalPindahKeGudang > 0 ? (
+                                <span>
+                                  Surplus Stok Cair:{" "}
+                                  <b className="text-emerald-600">
+                                    +{formatRupiah(surplusModalPindahKeGudang)}
+                                  </b>
+                                </span>
+                              ) : (
+                                <span>
+                                  Terpakai:{" "}
+                                  <b className="text-blue-500">
+                                    -{formatRupiah(terpakaiModalSimpan)}
+                                  </b>
+                                </span>
+                              )}
                             </div>
-                            {terpakaiModalSimpan > 0 && (
-                              <p className="text-[9px] text-blue-600 font-medium italic">
-                                *Uang terpakai langsung di-suntik ke Sisa Modal
-                                Akhir.
+
+                            {surplusModalPindahKeGudang > 0 ? (
+                              <p className="text-[9px] text-emerald-600 font-medium italic mt-1">
+                                *Ada kelebihan modal dari stok lama yang cair,
+                                dan otomatis dipindah ke simpanan.
                               </p>
+                            ) : (
+                              terpakaiModalSimpan > 0 && (
+                                <p className="text-[9px] text-blue-600 font-medium italic mt-1">
+                                  *Uang terpakai langsung disuntik ke Sisa Modal
+                                  Akhir.
+                                </p>
+                              )
                             )}
                           </div>
 
